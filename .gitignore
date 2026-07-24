@@ -1,7 +1,4 @@
-bin/
+/bin/
+/dist/
 *.exe
 *.syso
-
-# Release staging and archives. Anchored: an unanchored "dist/" would also match
-# src/dist/, which holds the readme.txt that ships inside those archives.
-/dist/
