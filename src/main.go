@@ -26,9 +26,12 @@ const (
 	wmShowMenu  = wmApp + 1
 	wmTrayIcon  = wmApp + 2
 	wmFixArrows = wmApp + 3
-
-	version = "1.0.0"
 )
+
+// version is stamped in at link time by build.cmd, which passes the contents of
+// the VERSION file as -X main.version=... A plain `go build ./src` keeps the
+// placeholder, so a hand-built exe never claims to be a release.
+var version = "0.0.0-dev"
 
 type appState struct {
 	exePath   string
@@ -111,6 +114,14 @@ func main() {
 	}
 
 	switch {
+	case opts.launch != "":
+		// The shim a pinned shortcut runs: launch one target and exit without ever
+		// creating a window, so this process never becomes its own taskbar button.
+		// No console: it is invoked by a click, not from a shell.
+		os.Exit(runLaunch(opts))
+	case opts.makeLauncher != "" || opts.makeAll:
+		attachParentConsole()
+		os.Exit(makeLaunchers(opts))
 	case opts.help:
 		attachParentConsole()
 		usage()
@@ -176,13 +187,17 @@ func instanceNames(cfgPath string) (class, mutex string) {
 // ---------------------------------------------------------------------------
 
 type options struct {
-	cfgPath    string
-	background bool
-	check      bool
-	listIcons  string
-	pickIcon   string
-	help       bool
-	version    bool
+	cfgPath      string
+	background   bool
+	check        bool
+	listIcons    string
+	pickIcon     string
+	launch       string // run the launcher entry with this id/label, then exit
+	makeLauncher string // write a pinnable .lnk for this launcher id/label
+	makeAll      bool   // write a .lnk for every launcher entry
+	out          string // output directory for generated shortcuts
+	help         bool
+	version      bool
 }
 
 func parseArgs(args []string) (options, error) {
@@ -204,6 +219,14 @@ func parseArgs(args []string) (options, error) {
 			o.listIcons, err = value(a)
 		case "--pick-icon":
 			o.pickIcon, err = value(a)
+		case "--launch":
+			o.launch, err = value(a)
+		case "--make-launcher":
+			o.makeLauncher, err = value(a)
+		case "--make-launchers":
+			o.makeAll = true
+		case "--out":
+			o.out, err = value(a)
 		case "--background", "-b":
 			o.background = true
 		case "--check":
@@ -229,18 +252,31 @@ Usage:
   TaskbarMenu.exe [--config <path>] [--background]
   TaskbarMenu.exe --list-icons <file>
   TaskbarMenu.exe --pick-icon  <file>
+  TaskbarMenu.exe --launch <id>
+  TaskbarMenu.exe --make-launcher  <id> [--out <dir>]
+  TaskbarMenu.exe --make-launchers [--out <dir>]
 
 The first run loads the config and stays resident in the tray; every later run
 just tells the resident instance to show the menu at the cursor and exits.
 
+The "launchers" section of config.json defines standalone, pin-to-taskbar
+entries. --launch runs one directly (this is what a pinned shortcut calls);
+--make-launcher / --make-launchers write .lnk files (one per entry) that you
+drag onto the taskbar. Each click starts a new instance and the launcher never
+becomes a running-app entry, like the classic Windows launchers.
+
 Options:
-  -c, --config <path>   Config file (default: config.json next to the exe)
-  -b, --background      Stay resident without showing the menu (use at logon)
-      --check           Validate the config and list every entry, then exit
-      --list-icons <f>  Report how many icons a .exe/.dll/.ico holds
-      --pick-icon  <f>  Open the Windows icon picker, print a config spec
-  -h, --help            This text
-  -v, --version         Version
+  -c, --config <path>     Config file (default: config.json next to the exe)
+  -b, --background        Stay resident without showing the menu (use at logon)
+      --check             Validate the config and list every entry, then exit
+      --list-icons <f>    Report how many icons a .exe/.dll/.ico holds
+      --pick-icon  <f>    Open the Windows icon picker, print a config spec
+      --launch <id>       Start the launcher entry with this id (or label)
+      --make-launcher <id>  Write a pinnable .lnk for one launcher entry
+      --make-launchers    Write a .lnk for every launcher entry
+      --out <dir>         Output directory for shortcuts (default: .\Launchers)
+  -h, --help              This text
+  -v, --version           Version
 `, version)
 }
 
@@ -274,6 +310,18 @@ func checkConfig(path string) int {
 
 	items, subs, seps := printItems(cfg.Items, "  ")
 	fmt.Printf("\n%d entr(ies), %d submenu(s), %d separator(s)\n", items, subs, seps)
+
+	if len(cfg.Launchers) > 0 {
+		fmt.Printf("\nlaunchers:\n")
+		for _, l := range cfg.Launchers {
+			target := l.Exec
+			if l.AppID != "" {
+				target = "appId: " + l.AppID
+			}
+			fmt.Printf("  %-24s %s\n", l.Id, target)
+		}
+		fmt.Printf("\n%d launcher(s)\n", len(cfg.Launchers))
+	}
 
 	if len(cfg.Warnings) > 0 {
 		fmt.Printf("\n%d warning(s):\n", len(cfg.Warnings))

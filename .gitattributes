@@ -1,0 +1,4 @@
+# readme.txt is shipped inside the release archives and opened straight from the
+# ZIP, usually in Notepad. Pin it to CRLF so it does not depend on whatever
+# core.autocrlf the checkout (local or CI runner) happens to use.
+src/dist/readme.txt text eol=crlf

@@ -1,0 +1,123 @@
+{
+    "$schema": "./config.schema.json",
+    "trayIcon": true,
+    "iconSize": 16,
+    "theme": "auto",
+    "anchor": "taskbar",
+    "items": [
+        {
+            "label": "Plain application",
+            "exec": "C:\\Program Files\\Mozilla Firefox\\firefox.exe"
+        },
+        {
+            "label": "Application with arguments",
+            "exec": "C:\\Program Files\\Mozilla Firefox\\firefox.exe",
+            "args": [
+                "-profile",
+                "C:\\Data\\Firefox-Profile",
+                "-no-remote"
+            ]
+        },
+        {
+            "type": "separator"
+        },
+        {
+            "label": "Nested submenu",
+            "icon": "C:\\Data\\Icons\\Favorites.ico",
+            "items": [
+                {
+                    "label": "First level",
+                    "exec": "C:\\Windows\\System32\\notepad.exe"
+                },
+                {
+                    "type": "separator"
+                },
+                {
+                    "label": "Second level",
+                    "items": [
+                        {
+                            "label": "Nesting has no depth limit",
+                            "exec": "C:\\Windows\\System32\\calc.exe"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "separator"
+        },
+        {
+            "label": "Document — opens in its registered handler",
+            "exec": "C:\\Data\\Sheet.xlsx"
+        },
+        {
+            "label": "Folder — opens in Explorer",
+            "exec": "%USERPROFILE%\\Downloads"
+        },
+        {
+            "label": "URL — opens in the default browser",
+            "exec": "https://emontis.io/"
+        },
+        {
+            "type": "separator"
+        },
+        {
+            "label": "Photos (Store app)",
+            "appId": "Microsoft.Windows.Photos_8wekyb3d8bbwe!App"
+        },
+        {
+            "type": "separator"
+        },
+        {
+            "label": "One icon out of a multi-icon DLL",
+            "exec": "C:\\Windows\\System32\\notepad.exe",
+            "icon": "C:\\Windows\\System32\\imageres.dll,109"
+        },
+        {
+            "label": "Icon by resource id (negative index)",
+            "exec": "C:\\Windows\\System32\\notepad.exe",
+            "icon": "C:\\Windows\\System32\\shell32.dll,-16"
+        },
+        {
+            "label": "SVG image as the icon (scaled crisply per DPI)",
+            "exec": "https://emontis.io/",
+            "icon": "C:\\Windows\\Cursors\\person.svg"
+        },
+        {
+            "label": "JPG image, aspect ratio preserved (not squashed)",
+            "exec": "C:\\Windows\\System32\\notepad.exe",
+            "icon": "C:\\Windows\\Web\\4K\\Wallpaper\\Windows\\img19_1920x1200.jpg"
+        },
+        {
+            "type": "separator"
+        },
+        {
+            "label": "Elevated — prompts for UAC",
+            "exec": "C:\\Windows\\System32\\cmd.exe",
+            "elevated": true
+        },
+        {
+            "label": "Maximized with a working directory",
+            "exec": "C:\\Windows\\System32\\cmd.exe",
+            "cwd": "C:\\Data",
+            "show": "maximized"
+        },
+        {
+            "label": "Minimized",
+            "exec": "C:\\Windows\\System32\\cmd.exe",
+            "show": "minimized"
+        }
+    ],
+    "launchers": [
+        {
+            "id": "firefox",
+            "label": "Firefox",
+            "exec": "C:\\Program Files\\Mozilla Firefox\\firefox.exe"
+        },
+        {
+            "id": "downloads",
+            "exec": "%USERPROFILE%\\Downloads",
+            "icon": "C:\\Windows\\System32\\shell32.dll,-16"
+        }
+    ]
+}

@@ -20,12 +20,12 @@ if errorlevel 1 goto :fail
 
 echo [2/4] Build TaskbarMenu (AMD64)
 set GOARCH=amd64
-go build -trimpath -ldflags="-s -w -H windowsgui" -o "%BIN%\TaskbarMenu-AMD64.exe" ./src
+go build -trimpath -ldflags="-s -w -H windowsgui -X main.version=%VERSION%" -o "%BIN%\TaskbarMenu-AMD64.exe" ./src
 if errorlevel 1 goto :fail
 
 echo [3/4] Build TaskbarMenu (ARM64)
 set GOARCH=arm64
-go build -trimpath -ldflags="-s -w -H windowsgui" -o "%BIN%\TaskbarMenu-ARM64.exe" ./src
+go build -trimpath -ldflags="-s -w -H windowsgui -X main.version=%VERSION%" -o "%BIN%\TaskbarMenu-ARM64.exe" ./src
 if errorlevel 1 goto :fail
 set GOARCH=
 

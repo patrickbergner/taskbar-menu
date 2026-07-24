@@ -73,6 +73,47 @@ func launch(n *node) error {
 	}
 }
 
+// launcherNode adapts a config Launcher to the node launch() consumes. Only the
+// launch-relevant fields matter here -- no icon extraction or command id, since
+// nothing is drawn.
+func launcherNode(l Launcher) *node {
+	return &node{
+		exec:     l.Exec,
+		appID:    l.AppID,
+		args:     l.Args,
+		cwd:      l.Cwd,
+		elevated: l.Elevated,
+		show:     l.showCmd(),
+	}
+}
+
+// runLaunch is the --launch shim. It loads the config, resolves the launcher by
+// id (or label), starts it, and returns an exit code. It creates no window and
+// returns immediately, which is what keeps the pinned shortcut from turning into
+// a running-app taskbar button -- the same behaviour the old VB launchers got
+// from being windowless winexe stubs, now native on AMD64 and ARM64.
+//
+// It runs silently: this path is triggered by a taskbar click, so failures go to
+// the TASKBARMENU_LOG sink rather than a console or a dialog.
+func runLaunch(opts options) int {
+	coInitialize() // ShellExecuteEx on a shell:AppsFolder target needs COM up
+	cfg, err := LoadConfig(defaultConfigPath(opts.cfgPath))
+	if err != nil {
+		logf("launch: %v", err)
+		return 1
+	}
+	l, ok := findLauncher(cfg, opts.launch)
+	if !ok {
+		logf("launch: no launcher %q", opts.launch)
+		return 1
+	}
+	if err := launch(launcherNode(l)); err != nil {
+		logf("launch %q: %v", opts.launch, err)
+		return 1
+	}
+	return 0
+}
+
 // quoteArgs joins arguments into a single command line.
 //
 // The array form in config.json exists so paths with spaces cannot be

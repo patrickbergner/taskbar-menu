@@ -12,16 +12,35 @@ import (
 
 // Config is the on-disk config.json.
 type Config struct {
-	TrayIcon *bool  `json:"trayIcon"`
-	IconSize int32  `json:"iconSize"`
-	Theme    string `json:"theme"`  // auto | dark | light
-	Anchor   string `json:"anchor"` // taskbar | cursor
-	Items    []Item `json:"items"`
+	TrayIcon  *bool      `json:"trayIcon"`
+	IconSize  int32      `json:"iconSize"`
+	Theme     string     `json:"theme"`  // auto | dark | light
+	Anchor    string     `json:"anchor"` // taskbar | cursor
+	Items     []Item     `json:"items"`
+	Launchers []Launcher `json:"launchers"`
 
 	// Warnings collected while normalising: bad enum values, items that carry
 	// neither exec nor children, unknown types. Surfaced in the tray tooltip
 	// rather than blocking the menu.
 	Warnings []string `json:"-"`
+}
+
+// Launcher is a standalone, pin-to-taskbar entry. It is deliberately separate
+// from the menu Items: a launcher is a flat target (no submenus or separators)
+// that TaskbarMenu can run directly (--launch <id>) or turn into a pinnable
+// shortcut (--make-launcher). The id is the stable key both the command line and
+// the generated shortcut's AppUserModelID are built from, so it must not change
+// once a launcher has been pinned.
+type Launcher struct {
+	Id       string   `json:"id"`
+	Label    string   `json:"label"`
+	Exec     string   `json:"exec"`
+	AppID    string   `json:"appId"` // AppUserModelID of a Microsoft Store app
+	Args     []string `json:"args"`
+	Icon     string   `json:"icon"`
+	Cwd      string   `json:"cwd"`
+	Elevated bool     `json:"elevated"`
+	Show     string   `json:"show"` // normal | minimized | maximized | hidden
 }
 
 // Item is one menu entry. An entry with Items is a submenu and ignores Exec.
@@ -164,6 +183,75 @@ func (c *Config) normalize() {
 		c.TrayIcon = &t
 	}
 	c.Items = c.normItems(c.Items, "")
+	c.normLaunchers()
+}
+
+// normLaunchers validates the flat launchers list the same way normItems handles
+// a menu level, minus submenus and separators. An entry with no id is dropped
+// with a warning: the id is the key --launch resolves and the shortcut's
+// AppUserModelID is derived from, so a launcher without one is unusable.
+func (c *Config) normLaunchers() {
+	out := make([]Launcher, 0, len(c.Launchers))
+	for i := range c.Launchers {
+		l := c.Launchers[i]
+		where := fmt.Sprintf("launchers[%d]", i)
+
+		l.Id = strings.TrimSpace(l.Id)
+		l.Label = expandEnv(l.Label)
+		l.Exec = expandEnv(l.Exec)
+		l.AppID = strings.TrimSpace(l.AppID)
+		l.Icon = expandEnv(l.Icon)
+		l.Cwd = expandEnv(l.Cwd)
+		for j := range l.Args {
+			l.Args[j] = expandEnv(l.Args[j])
+		}
+
+		if l.Id == "" {
+			c.warn("%s: missing id, skipped", where)
+			continue
+		}
+
+		// exec and appId are two ways to name the same target; appId wins, exactly
+		// as it does for a menu Item.
+		if l.AppID != "" && l.Exec != "" {
+			c.warn("%s (%q): both exec and appId given, using appId", where, l.Id)
+			l.Exec = ""
+		}
+		if l.Exec == "" && l.AppID == "" {
+			c.warn("%s (%q): no exec or appId, skipped", where, l.Id)
+			continue
+		}
+
+		switch strings.ToLower(l.Show) {
+		case "", "normal":
+			l.Show = "normal"
+		case "minimized", "maximized", "hidden":
+			l.Show = strings.ToLower(l.Show)
+		default:
+			c.warn("%s (%q): unknown show %q, using \"normal\"", where, l.Id, l.Show)
+			l.Show = "normal"
+		}
+
+		out = append(out, l)
+	}
+	c.Launchers = out
+}
+
+// findLauncher resolves the key --launch / --make-launcher was given: id first,
+// then label as a fallback, so a stable id is preferred but a unique label still
+// works.
+func findLauncher(c *Config, key string) (Launcher, bool) {
+	for _, l := range c.Launchers {
+		if l.Id == key {
+			return l, true
+		}
+	}
+	for _, l := range c.Launchers {
+		if l.Label == key {
+			return l, true
+		}
+	}
+	return Launcher{}, false
 }
 
 func normEnum(c *Config, field, v, def string, allowed ...string) string {
@@ -258,8 +346,11 @@ func (c *Config) normItems(items []Item, path string) []Item {
 	return out
 }
 
-func (it Item) showCmd() int32 {
-	switch it.Show {
+func (it Item) showCmd() int32     { return showCmdOf(it.Show) }
+func (l Launcher) showCmd() int32  { return showCmdOf(l.Show) }
+
+func showCmdOf(show string) int32 {
+	switch show {
 	case "minimized":
 		return showMinimized
 	case "maximized":

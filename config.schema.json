@@ -1,0 +1,178 @@
+{
+    "$schema": "https://json-schema.org/draft-07/schema#",
+    "$id": "https://local/taskbar-menu/config.schema.json",
+    "title": "TaskbarMenu configuration",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+        "$schema": {
+            "type": "string"
+        },
+        "trayIcon": {
+            "type": "boolean",
+            "default": true,
+            "description": "Show a notification-area icon. The process stays resident either way; with false it is simply invisible."
+        },
+        "iconSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64,
+            "default": 16,
+            "description": "Icon edge length in logical pixels at 100% scaling. Scaled per monitor DPI (16 -> 24 at 150%, 32 at 200%)."
+        },
+        "theme": {
+            "enum": [
+                "auto",
+                "dark",
+                "light"
+            ],
+            "default": "auto",
+            "description": "auto follows Settings > Personalization > Colors and updates without a restart."
+        },
+        "anchor": {
+            "enum": [
+                "taskbar",
+                "cursor"
+            ],
+            "default": "taskbar",
+            "description": "taskbar pins the menu flush against the taskbar edge while following the cursor along it. cursor opens at the exact pointer position, like menuApp."
+        },
+        "items": {
+            "type": "array",
+            "items": {
+                "$ref": "#/definitions/item"
+            }
+        },
+        "launchers": {
+            "type": "array",
+            "description": "Standalone, pin-to-taskbar entries, separate from the menu items. --launch <id> runs one directly (what a pinned shortcut calls); --make-launcher / --make-launchers write .lnk files to drag onto the taskbar. Each click starts a new instance and the launcher never becomes a running-app entry.",
+            "items": {
+                "$ref": "#/definitions/launcher"
+            }
+        }
+    },
+    "definitions": {
+        "item": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "label": {
+                    "type": "string",
+                    "description": "Display text. Required for everything except separators."
+                },
+                "type": {
+                    "enum": [
+                        "item",
+                        "separator"
+                    ],
+                    "default": "item",
+                    "description": "Unknown values are skipped with a warning rather than failing the file, so a config written for a later build still opens."
+                },
+                "exec": {
+                    "type": "string",
+                    "description": "An .exe, a document, a folder, a URL or a .lnk. Anything that is not an executable is opened with its registered default handler: .xlsx in Excel, a folder in Explorer, https:// in the browser. Supports %VAR% environment references. For a Microsoft Store app use appId instead."
+                },
+                "appId": {
+                    "type": "string",
+                    "description": "AppUserModelID of a Microsoft Store (packaged) app, launched via shell:AppsFolder — for apps that have no .exe to point at. Find it with PowerShell's Get-StartApps (lists Name and AppID for every Start-menu app), or browse them in explorer shell:AppsFolder. Example: \"Microsoft.Windows.Photos_8wekyb3d8bbwe!App\". Mutually exclusive with exec (appId wins if both are set). The icon resolves automatically to the app's package logo; set icon only to override it."
+                },
+                "args": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "Arguments as separate strings; quoting is handled automatically. Ignored for document targets, where the handler decides. Supports %VAR%."
+                },
+                "icon": {
+                    "type": "string",
+                    "description": "An .ico path, or \"file,index\" to pick one icon out of an .exe/.dll that holds several (a negative index is a resource id). May also be an image file — .svg, .png, .jpg, .gif, .bmp, .tiff, and .webp/.avif/.heic where the OS codec is installed — which is scaled to the icon size with its aspect ratio preserved (a non-square image is centered on transparency, not stretched). Omit to let the shell resolve the icon from exec. Use --list-icons and --pick-icon to find an index."
+                },
+                "cwd": {
+                    "type": "string",
+                    "description": "Working directory. Supports %VAR%."
+                },
+                "elevated": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Launch via the runas verb, producing a UAC prompt."
+                },
+                "show": {
+                    "enum": [
+                        "normal",
+                        "minimized",
+                        "maximized",
+                        "hidden"
+                    ],
+                    "default": "normal",
+                    "description": "Initial window state."
+                },
+                "tooltip": {
+                    "type": "string",
+                    "description": "Reserved; native popup menus have no tooltips yet."
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/item"
+                    },
+                    "description": "Turns the entry into a submenu at any depth. exec is ignored when present."
+                }
+            }
+        },
+        "launcher": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "id"
+            ],
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "description": "Stable key. --launch <id> resolves it and the generated shortcut's AppUserModelID is derived from it, so the pinned button survives regeneration. Do not change an id once a launcher has been pinned — that mints a new pin. Also the .lnk file's base name."
+                },
+                "label": {
+                    "type": "string",
+                    "description": "Display text for the shortcut. Optional; --launch also accepts a label as a fallback key when no id matches."
+                },
+                "exec": {
+                    "type": "string",
+                    "description": "An .exe, a document, a folder, a URL or a .lnk, opened with its registered default handler. Supports %VAR%. For a Microsoft Store app use appId instead."
+                },
+                "appId": {
+                    "type": "string",
+                    "description": "AppUserModelID of a Microsoft Store (packaged) app, launched via shell:AppsFolder. Mutually exclusive with exec (appId wins if both are set)."
+                },
+                "args": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "Arguments as separate strings; quoting is handled automatically. Supports %VAR%."
+                },
+                "icon": {
+                    "type": "string",
+                    "description": "Shortcut icon as an .ico path or \"file,index\" into an .exe/.dll (a negative index is a resource id). Image files and Store-app logos cannot be used as a shortcut icon; the target's own icon is used instead. Omit to let the shell resolve it from exec."
+                },
+                "cwd": {
+                    "type": "string",
+                    "description": "Working directory. Supports %VAR%."
+                },
+                "elevated": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Launch via the runas verb, producing a UAC prompt."
+                },
+                "show": {
+                    "enum": [
+                        "normal",
+                        "minimized",
+                        "maximized",
+                        "hidden"
+                    ],
+                    "default": "normal",
+                    "description": "Initial window state of the launched target."
+                }
+            }
+        }
+    }
+}
