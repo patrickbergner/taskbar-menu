@@ -348,10 +348,10 @@ const vtLPWSTR = 31
 // the type tag and the value pointer. The trailing word pads the struct to the
 // 24-byte x64 size so nothing beyond it is read.
 type propVariant struct {
-	vt uint16
-	_  uint16
-	_  uint16
-	_  uint16
+	vt  uint16
+	_   uint16
+	_   uint16
+	_   uint16
 	val uintptr
 	_   uintptr
 }

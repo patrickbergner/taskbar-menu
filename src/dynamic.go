@@ -166,7 +166,7 @@ func (a *appState) expand(d *dynSource) []*node {
 
 	var out []*node
 	if d.openLabel != "" && len(d.roots) > 0 {
-		open := a.leafNode("Open "+d.openLabel, d.roots[0])
+		open := a.leafNode(fmt.Sprintf(ui.OpenFolderFormat, d.openLabel), d.roots[0])
 		sep := &node{separator: true, disabled: true}
 		a.register(sep)
 		out = append(out, open, sep)
@@ -180,7 +180,7 @@ func (a *appState) expand(d *dynSource) []*node {
 // two spacers renders as a puzzling sliver.
 func (a *appState) nonEmpty(out []*node) []*node {
 	if len(out) == 0 {
-		return []*node{a.disabledNode("(empty)")}
+		return []*node{a.disabledNode(ui.EmptyFolder)}
 	}
 	return out
 }
@@ -238,12 +238,12 @@ func (a *appState) expandSettings() []*node {
 	for _, s := range settingsPages {
 		if s.group != group {
 			group = s.group
-			current = &node{label: group}
+			current = &node{label: settingsGroupLabel(s.group)}
 			current.iconFile, current.iconIdx = iconFile, iconIdx
 			a.register(current)
 			out = append(out, current)
 		}
-		n := a.registerCommand(&node{label: s.label, exec: s.uri, show: showNormal})
+		n := a.registerCommand(&node{label: settingsPageLabel(s), exec: s.uri, show: showNormal})
 		n.iconFile, n.iconIdx = iconFile, iconIdx
 		current.children = append(current.children, n)
 	}
@@ -316,9 +316,9 @@ func (a *appState) disabledNode(label string) *node {
 // so hitting the limit is a door rather than a dead end.
 func (a *appState) moreNode(roots []string, shown int) *node {
 	if len(roots) > 0 {
-		return a.leafNode(fmt.Sprintf("More… (showing first %d)", shown), roots[0])
+		return a.leafNode(fmt.Sprintf(ui.MoreFormat, shown), roots[0])
 	}
-	return a.disabledNode("More…")
+	return a.disabledNode(ui.More)
 }
 
 // hiddenOrSystem keeps the entries Explorer hides out of the menu. Without it

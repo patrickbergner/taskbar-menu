@@ -37,6 +37,12 @@
             "default": "taskbar",
             "description": "taskbar pins the menu flush against the taskbar edge while following the cursor along it. cursor opens at the exact pointer position, like menuApp."
         },
+        "language": {
+            "type": "string",
+            "pattern": "^(auto|[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*)$",
+            "default": "auto",
+            "description": "UI language for the tray menu, notifications and dialogs -- not your menu entries, which always show whatever label you gave them, and not the special catalog (English by design). \"auto\" detects the Windows display language at startup; an explicit tag (e.g. \"de\") forces it regardless of the system locale, and \"en\" forces English even where a translation exists. Looks for lang/<tag>.json next to the exe, then an embedded copy, then falls back to English -- never a hard error."
+        },
         "items": {
             "type": "array",
             "items": {

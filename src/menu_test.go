@@ -46,7 +46,7 @@ func TestBuildNodesOpenAllPrependsEntryAndSeparator(t *testing.T) {
 	}
 	children := nodes[0].children
 	got := labels(children)
-	want := []string{"Open all", "----", "Mail", "Chat"}
+	want := []string{ui.OpenAll, "----", "Mail", "Chat"}
 	if len(got) != len(want) {
 		t.Fatalf("children = %v, want %v", got, want)
 	}

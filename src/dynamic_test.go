@@ -335,7 +335,7 @@ func TestWalkBudgetStopsWhenSpent(t *testing.T) {
 func TestExpandEmptyFolderIsMarked(t *testing.T) {
 	a := newTestApp()
 	got := a.expand(&dynSource{kind: dynFolder, roots: []string{t.TempDir()}, depth: 1, limit: defaultLimit})
-	if len(got) != 1 || got[0].label != "(empty)" || !got[0].disabled {
+	if len(got) != 1 || got[0].label != ui.EmptyFolder || !got[0].disabled {
 		t.Errorf("an empty folder should say so, got %v", labels(got))
 	}
 }
@@ -472,11 +472,11 @@ func TestSettingsListWellFormed(t *testing.T) {
 	lastGroup := ""
 	groupSeen := map[string]bool{}
 	for _, s := range settingsPages {
-		if s.group == "" || s.label == "" {
+		if s.group == "" {
 			t.Errorf("incomplete settings page: %+v", s)
 		}
 		if !strings.HasPrefix(s.uri, "ms-settings:") {
-			t.Errorf("%q: uri %q must start with ms-settings:", s.label, s.uri)
+			t.Errorf("uri %q must start with ms-settings:", s.uri)
 		}
 		if seen[s.uri] {
 			t.Errorf("duplicate uri %q", s.uri)
@@ -539,8 +539,8 @@ func TestLaunchTargetFor(t *testing.T) {
 		// Packaged app: a bare AUMID.
 		`Microsoft.WindowsCalculator_8wekyb3d8bbwe!App`: appsFolderPrefix + `Microsoft.WindowsCalculator_8wekyb3d8bbwe!App`,
 		// Desktop app in the AppsFolder: known-folder-relative, backslashes and all.
-		`{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\charmap.exe`:      appsFolderPrefix + `{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\charmap.exe`,
-		`{6D809377-6AF0-444B-8957-A3773F02200E}\App\thing.exe`:    appsFolderPrefix + `{6D809377-6AF0-444B-8957-A3773F02200E}\App\thing.exe`,
+		`{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\charmap.exe`:   appsFolderPrefix + `{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\charmap.exe`,
+		`{6D809377-6AF0-444B-8957-A3773F02200E}\App\thing.exe`: appsFolderPrefix + `{6D809377-6AF0-444B-8957-A3773F02200E}\App\thing.exe`,
 		// Control Panel applet.
 		`::{6C8EEC18-8D75-41B2-A177-8831D59D2D50}`: `shell:::{6C8EEC18-8D75-41B2-A177-8831D59D2D50}`,
 		// Already absolute, or a real file: untouched.
@@ -566,9 +566,9 @@ func TestIsFilesystemPath(t *testing.T) {
 		`\\server\share`: true,
 		`{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\charmap.exe`: false,
 		`::{6C8EEC18-8D75-41B2-A177-8831D59D2D50}`:           false,
-		`shell:AppsFolder`:                                   false,
-		`Foo_bar!App`:                                        false,
-		``:                                                   false,
+		`shell:AppsFolder`: false,
+		`Foo_bar!App`:      false,
+		``:                 false,
 	}
 	for in, want := range cases {
 		if got := isFilesystemPath(in); got != want {

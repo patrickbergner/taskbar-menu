@@ -52,17 +52,37 @@ func (op powerOp) destructive() bool {
 func (op powerOp) prompt() string {
 	switch op {
 	case opSignOut:
-		return "Sign out of Windows?\n\nAll open applications will be closed."
+		return ui.PowerPromptSignOut
 	case opRestart:
-		return "Restart this PC?\n\nAll open applications will be closed."
+		return ui.PowerPromptRestart
 	case opShutdown:
-		return "Shut down this PC?\n\nAll open applications will be closed."
+		return ui.PowerPromptShutdown
 	case opSleep:
-		return "Put this PC to sleep?"
+		return ui.PowerPromptSleep
 	case opHibernate:
-		return "Hibernate this PC?"
+		return ui.PowerPromptHibernate
 	default:
-		return "Lock this PC?"
+		return ui.PowerPromptLock
+	}
+}
+
+// verb names the operation for NotifyPowerFailedFormat ("Could not %s"), so
+// a translated sentence reads naturally instead of leaking the internal
+// catalog id ("shutdown") into it.
+func (op powerOp) verb() string {
+	switch op {
+	case opSignOut:
+		return ui.PowerVerbSignOut
+	case opRestart:
+		return ui.PowerVerbRestart
+	case opShutdown:
+		return ui.PowerVerbShutdown
+	case opSleep:
+		return ui.PowerVerbSleep
+	case opHibernate:
+		return ui.PowerVerbHibernate
+	default:
+		return ui.PowerVerbLock
 	}
 }
 
@@ -183,7 +203,7 @@ func (a *appState) powerAction(id string, confirm bool) func() {
 			return
 		}
 		if err := powerExec(op); err != nil {
-			a.notify(windowTitle, "Could not "+id+"\n"+err.Error(), niifError)
+			a.notify(windowTitle, fmt.Sprintf(ui.NotifyPowerFailedFormat, op.verb(), err.Error()), niifError)
 		}
 	}
 }

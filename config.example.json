@@ -3,7 +3,8 @@
     "trayIcon": true,
     "iconSize": 16,
     "theme": "auto",
-    "anchor": "cursor",
+    "anchor": "taskbar",
+    "language": "auto",
     "items": [
         {
             "label": "Special Items",

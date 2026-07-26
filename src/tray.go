@@ -3,6 +3,7 @@
 package main
 
 import (
+	"fmt"
 	"path/filepath"
 	"syscall"
 	"unsafe"
@@ -58,12 +59,12 @@ func (a *appState) refreshTrayTip() {
 func (a *appState) tipText() string {
 	name := filepath.Base(a.cfgPath)
 	if a.cfgErr != nil {
-		return "TaskbarMenu — " + name + " — config error"
+		return fmt.Sprintf(ui.TooltipErrorFormat, windowTitle, name)
 	}
 	if n := len(a.cfg.Warnings); n > 0 {
-		return "TaskbarMenu — " + name + " — " + itoa(n) + " config warning(s)"
+		return fmt.Sprintf(ui.TooltipWarningsFormat, windowTitle, name, n)
 	}
-	return "TaskbarMenu — " + name
+	return fmt.Sprintf(ui.TooltipFormat, windowTitle, name)
 }
 
 // trayIcon uses the exe's own embedded icon so the notification area matches
@@ -108,18 +109,4 @@ func (a *appState) onTrayMessage(lp uintptr) {
 	case wmRButtonUp:
 		a.showTrayMenu(getCursorPos())
 	}
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(buf[i:])
 }

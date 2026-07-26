@@ -41,6 +41,12 @@ type appState struct {
 	cfgErr    error
 	cfgStamp  stamp
 
+	// langFilePath is the external lang/<tag>.json currently in effect, if
+	// any -- "" when the active language is purely embedded. langStamp is
+	// its hot-reload stamp, the same mechanism cfgStamp uses for config.json.
+	langFilePath string
+	langStamp    stamp
+
 	hwnd  syscall.Handle
 	hinst syscall.Handle
 
@@ -773,7 +779,7 @@ func (a *appState) invoke(id uint32) {
 		return
 	}
 	if err := launch(n); err != nil {
-		a.notify("TaskbarMenu", "Could not start "+n.label+"\n"+err.Error(), niifError)
+		a.notify(windowTitle, fmt.Sprintf(ui.NotifyLaunchFailedFormat, n.label, err.Error()), niifError)
 	}
 }
 
@@ -785,11 +791,12 @@ func (a *appState) invoke(id uint32) {
 // every show costs about 50us and cannot miss an edit, which is why there is no
 // file watcher here.
 func (a *appState) reload(force bool) {
-	st := statStamp(a.cfgPath)
-	if !force && st.equal(a.cfgStamp) {
+	cfgSt := statStamp(a.cfgPath)
+	langSt := statStamp(a.langFilePath) // stamp{} when langFilePath is ""; compares equal to itself
+	if !force && cfgSt.equal(a.cfgStamp) && langSt.equal(a.langStamp) {
 		return
 	}
-	a.cfgStamp = st
+	a.cfgStamp = cfgSt
 
 	cfg, err := LoadConfig(a.cfgPath)
 	if err != nil {
@@ -798,6 +805,21 @@ func (a *appState) reload(force bool) {
 	} else {
 		a.cfgErr = nil
 		a.cfg = cfg
+	}
+
+	exeDir := ""
+	if a.exePath != "" {
+		exeDir = filepath.Dir(a.exePath)
+	}
+	lr := resolveLanguage(a.cfg.Language, exeDir)
+	ui = lr.strings
+	a.langFilePath = lr.watch
+	a.langStamp = statStamp(a.langFilePath)
+	switch {
+	case lr.unresolved:
+		a.cfg.warn("language: %q not found, using English", a.cfg.Language)
+	case lr.warning != "":
+		a.cfg.warn("%s", lr.warning)
 	}
 
 	purgeCaches()
@@ -813,12 +835,12 @@ func (a *appState) reloadInteractive() {
 	a.reload(true)
 	switch {
 	case a.cfgErr != nil:
-		a.notify(windowTitle, "Config error: "+a.cfgErr.Error(), niifError)
+		a.notify(windowTitle, fmt.Sprintf(ui.NotifyConfigErrorFormat, a.cfgErr.Error()), niifError)
 	case len(a.cfg.Warnings) > 0:
-		a.notify(windowTitle, fmt.Sprintf("Reloaded %s with %d warning(s)",
+		a.notify(windowTitle, fmt.Sprintf(ui.NotifyReloadedWarningsFormat,
 			filepath.Base(a.cfgPath), len(a.cfg.Warnings)), niifWarning)
 	default:
-		a.notify(windowTitle, "Reloaded "+filepath.Base(a.cfgPath), niifInfo)
+		a.notify(windowTitle, fmt.Sprintf(ui.NotifyReloadedFormat, filepath.Base(a.cfgPath)), niifInfo)
 	}
 }
 
@@ -877,7 +899,7 @@ func (a *appState) ensureBuilt(dpi uint32, work RECT) {
 			nodes = append([]*node{warn, sep}, nodes...)
 		}
 		if len(nodes) == 0 {
-			nodes = a.errorNodes("no entries in " + filepath.Base(a.cfgPath))
+			nodes = a.errorNodes(fmt.Sprintf(ui.ErrorNoEntries, filepath.Base(a.cfgPath)))
 		}
 	}
 

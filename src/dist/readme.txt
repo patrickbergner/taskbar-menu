@@ -82,6 +82,11 @@ Top level
               taskbar sits flush against the taskbar edge; cursor opens at
               the exact pointer position.
 
+  language    (default "auto")
+              UI language for the tray menu, notifications and dialogs.
+              auto detects the Windows display language; an explicit tag
+              like "de" forces it, "en" forces English. See LOCALIZATION.
+
   items       The menu itself: an array of entries, see below.
 
   launchers   Optional array of pinnable launchers, see PINNED LAUNCHERS.
@@ -285,6 +290,31 @@ light/dark setting and switches live, without a restart; dark and light
 force one.
 
 
+LOCALIZATION
+------------------------------------------------------------------------------
+
+The tray menu, the config-error and warning menu, notifications, the tray
+tooltip and the power-action confirmation dialogs follow the Windows
+display language automatically. This does not touch your own menu entries
+(those always show whatever label you gave them) but it does cover the
+special catalog's default labels (see SPECIAL ENTRIES).
+
+Language setting:
+
+    { "language": "auto" }   default: match the Windows display language,
+                             English if unsupported
+    { "language": "de" }     force German regardless of the system language
+    { "language": "en" }     force English
+
+A translation lives at lang\<tag>.json next to the exe, loaded the same
+way config.json is, and hot-reloaded the same way too.
+
+To add a language, download lang/en.json from the source repository
+(https://github.com/patrickbergner/taskbar-menu/blob/main/src/lang/en.json),
+save it as lang\<tag>.json next to the exe, and translate the values.
+Please commit language files back to the project as a pull request.
+
+
 SPECIAL ENTRIES
 ------------------------------------------------------------------------------
 
@@ -347,10 +377,9 @@ Two things worth knowing:
   - Not every tool exists on every edition. gpedit and secpol are absent on
     Windows Home. --config-check reports [target not found] for those; the
     entry still appears in the menu.
-  - Labels are English regardless of the system language, because
-    resolving the localised name would cost a shell call per entry and
-    make --config-check print differently on every machine. Set label to
-    translate one.
+  - Labels follow language (see LOCALIZATION) for any id this build ships
+    a translation for; an id without one, or a language not shipped at
+    all, falls back to English.
 
 
 FOLDER SUBMENUS

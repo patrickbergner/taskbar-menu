@@ -49,13 +49,14 @@ var (
 	windowscodecs = sysDLL("windowscodecs.dll")
 	d2d1          = sysDLL("d2d1.dll")
 
-	procCreateMutexW       = kernel32.NewProc("CreateMutexW")
-	procGetModuleHandleW   = kernel32.NewProc("GetModuleHandleW")
-	procAttachConsole      = kernel32.NewProc("AttachConsole")
-	procGetStdHandle       = kernel32.NewProc("GetStdHandle")
-	procSearchPathW        = kernel32.NewProc("SearchPathW")
-	procMulDiv             = kernel32.NewProc("MulDiv")
-	procGetCurrentThreadID = kernel32.NewProc("GetCurrentThreadId")
+	procCreateMutexW             = kernel32.NewProc("CreateMutexW")
+	procGetModuleHandleW         = kernel32.NewProc("GetModuleHandleW")
+	procAttachConsole            = kernel32.NewProc("AttachConsole")
+	procGetStdHandle             = kernel32.NewProc("GetStdHandle")
+	procSearchPathW              = kernel32.NewProc("SearchPathW")
+	procMulDiv                   = kernel32.NewProc("MulDiv")
+	procGetCurrentThreadID       = kernel32.NewProc("GetCurrentThreadId")
+	procGetUserDefaultLocaleName = kernel32.NewProc("GetUserDefaultLocaleName")
 
 	procRegisterClassExW              = user32.NewProc("RegisterClassExW")
 	procCreateWindowExW               = user32.NewProc("CreateWindowExW")
@@ -878,6 +879,23 @@ func getClassName(hwnd syscall.Handle) string {
 		return ""
 	}
 	return utf16ToString(buf[:n])
+}
+
+// localeNameMaxLength is LOCALE_NAME_MAX_LENGTH from the Windows SDK: the
+// largest buffer GetUserDefaultLocaleName ever needs.
+const localeNameMaxLength = 85
+
+// getUserDefaultLocaleName reads the current user's Windows display language,
+// e.g. "de-DE" -- the same tag Settings > Time & Language > Language shows.
+// Returns "" on any failure, which the caller treats as "use English".
+func getUserDefaultLocaleName() string {
+	buf := make([]uint16, localeNameMaxLength)
+	n, _, _ := procGetUserDefaultLocaleName.Call(
+		uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	if n == 0 {
+		return ""
+	}
+	return utf16ToString(buf)
 }
 
 func sendMessage(h syscall.Handle, msg uint32, wp, lp uintptr) uintptr {

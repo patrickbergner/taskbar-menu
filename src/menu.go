@@ -129,7 +129,7 @@ func (a *appState) withOpenAll(children []*node) []*node {
 		return children
 	}
 	open := a.registerCommand(&node{
-		label:  "Open all",
+		label:  ui.OpenAll,
 		action: func() { a.launchAll(targets) },
 	})
 	sep := &node{separator: true, disabled: true}
@@ -165,7 +165,7 @@ func collectLaunchTargets(nodes []*node) []*node {
 func (a *appState) launchAll(targets []*node) {
 	for _, n := range targets {
 		if err := launch(n); err != nil {
-			a.notify("TaskbarMenu", "Could not start "+n.label+"\n"+err.Error(), niifError)
+			a.notify(windowTitle, fmt.Sprintf(ui.NotifyLaunchFailedFormat, n.label, err.Error()), niifError)
 		}
 	}
 }
@@ -476,24 +476,24 @@ func (a *appState) applyMenuBackground(menu syscall.Handle) {
 // Combined with hot reload this makes fixing the file self-correcting: save,
 // click again, see the result.
 func (a *appState) errorNodes(msg string) []*node {
-	head := a.disabledNode("⚠ Config error")
+	head := a.disabledNode(ui.ErrorConfigError)
 	detail := a.disabledNode(msg)
 	sep := &node{separator: true, disabled: true}
 	a.register(sep)
-	open := a.registerCommand(&node{label: "Open config.json…", action: a.openConfig})
-	reload := a.registerCommand(&node{label: "Reload", action: a.reloadInteractive})
+	open := a.registerCommand(&node{label: ui.ErrorOpenConfig, action: a.openConfig})
+	reload := a.registerCommand(&node{label: ui.ErrorReload, action: a.reloadInteractive})
 	return []*node{head, detail, sep, open, reload}
 }
 
 // trayNodes is the right-click menu on the notification icon.
 func (a *appState) trayNodes() []*node {
 	items := []*node{
-		{label: "Show menu", action: func() { a.showMenu(getCursorPos()) }},
+		{label: ui.TrayShowMenu, action: func() { a.showMenu(getCursorPos()) }},
 		{separator: true, disabled: true},
-		{label: "Reload config", action: a.reloadInteractive},
-		{label: "Edit config…", action: a.openConfig},
+		{label: ui.TrayReloadConfig, action: a.reloadInteractive},
+		{label: ui.TrayEditConfig, action: a.openConfig},
 		{separator: true, disabled: true},
-		{label: "Exit", action: func() { postQuitMessage(0) }},
+		{label: ui.TrayExit, action: func() { postQuitMessage(0) }},
 	}
 	for _, n := range items {
 		if n.separator {
@@ -508,7 +508,7 @@ func (a *appState) trayNodes() []*node {
 // warningNode summarises normalisation warnings without hiding the menu.
 func (a *appState) warningNode(count int) *node {
 	return a.registerCommand(&node{
-		label:  fmt.Sprintf("⚠ %d config warning(s) — click to open", count),
+		label:  fmt.Sprintf(ui.WarningFormat, count),
 		action: a.openConfig,
 	})
 }

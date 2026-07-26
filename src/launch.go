@@ -4,6 +4,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -109,6 +111,9 @@ func runLaunch(opts options) int {
 	if err != nil {
 		logf("launch: %v", err)
 		return 1
+	}
+	if exe, err := os.Executable(); err == nil {
+		ui = resolveLanguage(cfg.Language, filepath.Dir(exe)).strings
 	}
 	l, ok := findLauncher(cfg, opts.launch)
 	if !ok {

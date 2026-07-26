@@ -31,7 +31,6 @@ const (
 type specialEntry struct {
 	id     string
 	group  string // for --list-specials only
-	label  string
 	kind   specialKind
 	target string
 	args   []string
@@ -57,84 +56,84 @@ const sys32 = `%SystemRoot%\System32\`
 // unchanged and an explicit spec would only be a chance to be wrong.
 var specials = []specialEntry{
 	// --- Management -------------------------------------------------------
-	{id: "deviceManager", group: "Management", label: "Device Manager",
+	{id: "deviceManager", group: "Management",
 		// -201, not index 0: index 0 of devmgr.dll is the driver-signing badge.
 		// This is the id the shell class registration itself points at.
 		target: sys32 + "devmgmt.msc", icon: sys32 + "devmgr.dll,-201"},
-	{id: "diskManagement", group: "Management", label: "Disk Management",
+	{id: "diskManagement", group: "Management",
 		target: sys32 + "diskmgmt.msc", icon: sys32 + "dmdskres.dll,0"},
-	{id: "computerManagement", group: "Management", label: "Computer Management",
+	{id: "computerManagement", group: "Management",
 		target: sys32 + "compmgmt.msc", icon: sys32 + "Mycomput.dll,2"},
-	{id: "services", group: "Management", label: "Services",
+	{id: "services", group: "Management",
 		target: sys32 + "services.msc", icon: sys32 + "filemgmt.dll,0"},
-	{id: "taskScheduler", group: "Management", label: "Task Scheduler",
+	{id: "taskScheduler", group: "Management",
 		target: sys32 + "taskschd.msc", icon: sys32 + "miguiresource.dll,1"},
-	{id: "eventViewer", group: "Management", label: "Event Viewer",
+	{id: "eventViewer", group: "Management",
 		target: sys32 + "eventvwr.msc", icon: sys32 + "miguiresource.dll,0"},
-	{id: "gpedit", group: "Management", label: "Local Group Policy Editor",
+	{id: "gpedit", group: "Management",
 		target: sys32 + "gpedit.msc", icon: sys32 + "gpedit.dll,0"},
 	// filemgmt.dll holds no users icon -- index 0 there is the Services gears,
 	// which is what this entry drew before anyone looked at it.
-	{id: "localUsers", group: "Management", label: "Local Users and Groups",
+	{id: "localUsers", group: "Management",
 		target: sys32 + "lusrmgr.msc", icon: sys32 + "netplwiz.exe,0"},
-	{id: "secpol", group: "Management", label: "Local Security Policy",
+	{id: "secpol", group: "Management",
 		target: sys32 + "secpol.msc", icon: sys32 + "wsecedit.dll,0"},
-	{id: "firewall", group: "Management", label: "Windows Defender Firewall",
+	{id: "firewall", group: "Management",
 		target: sys32 + "WF.msc", icon: sys32 + "AuthFWGP.dll,-101"},
-	{id: "certificates", group: "Management", label: "Certificates",
+	{id: "certificates", group: "Management",
 		target: sys32 + "certmgr.msc", icon: sys32 + "certmgr.dll,0"},
-	{id: "perfmon", group: "Management", label: "Performance Monitor",
+	{id: "perfmon", group: "Management",
 		target: sys32 + "perfmon.msc", icon: sys32 + "wdc.dll,-108"},
-	{id: "resourceMonitor", group: "Management", label: "Resource Monitor",
+	{id: "resourceMonitor", group: "Management",
 		target: sys32 + "perfmon.exe", args: []string{"/res"}, icon: sys32 + "wdc.dll,-108"},
-	{id: "taskManager", group: "Management", label: "Task Manager",
+	{id: "taskManager", group: "Management",
 		target: sys32 + "taskmgr.exe"},
-	{id: "regedit", group: "Management", label: "Registry Editor",
+	{id: "regedit", group: "Management",
 		target: `%SystemRoot%\regedit.exe`, icon: `%SystemRoot%\regedit.exe,-100`},
-	{id: "msconfig", group: "Management", label: "System Configuration",
+	{id: "msconfig", group: "Management",
 		target: sys32 + "msconfig.exe", icon: sys32 + "msconfig.exe,-3000"},
-	{id: "systemInfo", group: "Management", label: "System Information",
+	{id: "systemInfo", group: "Management",
 		target: sys32 + "msinfo32.exe"},
 	// rundll32 holds no icon resources of its own, so this one genuinely needs a
 	// spec: the dialog belongs to System Properties, hence sysdm.cpl.
-	{id: "environmentVariables", group: "Management", label: "Environment Variables",
+	{id: "environmentVariables", group: "Management",
 		target: sys32 + "rundll32.exe", args: []string{"sysdm.cpl,EditEnvironmentVariables"},
 		icon: sys32 + "sysdm.cpl,0"},
-	{id: "diskCleanup", group: "Management", label: "Disk Cleanup",
+	{id: "diskCleanup", group: "Management",
 		target: sys32 + "cleanmgr.exe"},
-	{id: "defrag", group: "Management", label: "Optimise Drives",
+	{id: "defrag", group: "Management",
 		target: sys32 + "dfrgui.exe"},
-	{id: "mmc", group: "Management", label: "Microsoft Management Console",
+	{id: "mmc", group: "Management",
 		target: sys32 + "mmc.exe"},
 
 	// --- Control Panel ----------------------------------------------------
 	// Every .cpl is its own icon container, so none of these carry a spec.
-	{id: "controlPanelHome", group: "Control Panel", label: "Control Panel",
+	{id: "controlPanelHome", group: "Control Panel",
 		target: sys32 + "control.exe"},
-	{id: "systemProperties", group: "Control Panel", label: "System Properties",
+	{id: "systemProperties", group: "Control Panel",
 		target: sys32 + "sysdm.cpl"},
-	{id: "networkConnections", group: "Control Panel", label: "Network Connections",
+	{id: "networkConnections", group: "Control Panel",
 		target: sys32 + "ncpa.cpl"},
-	{id: "programsAndFeatures", group: "Control Panel", label: "Programs and Features",
+	{id: "programsAndFeatures", group: "Control Panel",
 		target: sys32 + "appwiz.cpl"},
-	{id: "displayControl", group: "Control Panel", label: "Display",
+	{id: "displayControl", group: "Control Panel",
 		target: sys32 + "desk.cpl"},
-	{id: "mouse", group: "Control Panel", label: "Mouse",
+	{id: "mouse", group: "Control Panel",
 		target: sys32 + "main.cpl"},
-	{id: "soundControl", group: "Control Panel", label: "Sound",
+	{id: "soundControl", group: "Control Panel",
 		target: sys32 + "mmsys.cpl"},
-	{id: "internetOptions", group: "Control Panel", label: "Internet Options",
+	{id: "internetOptions", group: "Control Panel",
 		target: sys32 + "inetcpl.cpl"},
-	{id: "dateTime", group: "Control Panel", label: "Date and Time",
+	{id: "dateTime", group: "Control Panel",
 		target: sys32 + "timedate.cpl"},
-	{id: "securityMaintenance", group: "Control Panel", label: "Security and Maintenance",
+	{id: "securityMaintenance", group: "Control Panel",
 		target: sys32 + "wscui.cpl"},
 	// The one .cpl here that needs a spec: index 0 of bthprops.cpl is a warning
 	// triangle. -200 of DevicePairingFolder.dll is what the Bluetooth Devices
 	// shell class registers.
-	{id: "bluetoothControl", group: "Control Panel", label: "Bluetooth",
+	{id: "bluetoothControl", group: "Control Panel",
 		target: sys32 + "bthprops.cpl", icon: sys32 + "DevicePairingFolder.dll,-200"},
-	{id: "userAccounts", group: "Control Panel", label: "User Accounts",
+	{id: "userAccounts", group: "Control Panel",
 		target: sys32 + "netplwiz.exe"},
 
 	// --- Settings ---------------------------------------------------------
@@ -143,29 +142,29 @@ var specials = []specialEntry{
 	// cannot read, and resource -10 of SystemSettings.exe is what Windows' own
 	// Win+X shortcuts point at. Per-page icons can be added later without a
 	// schema change.
-	{id: "settings", group: "Settings", label: "Settings",
+	{id: "settings", group: "Settings",
 		target: "ms-settings:", icon: settingsIcon},
-	{id: "windowsUpdate", group: "Settings", label: "Windows Update",
+	{id: "windowsUpdate", group: "Settings",
 		target: "ms-settings:windowsupdate", icon: settingsIcon},
-	{id: "installedApps", group: "Settings", label: "Installed Apps",
+	{id: "installedApps", group: "Settings",
 		target: "ms-settings:appsfeatures", icon: settingsIcon},
-	{id: "displaySettings", group: "Settings", label: "Display",
+	{id: "displaySettings", group: "Settings",
 		target: "ms-settings:display", icon: settingsIcon},
-	{id: "soundSettings", group: "Settings", label: "Sound",
+	{id: "soundSettings", group: "Settings",
 		target: "ms-settings:sound", icon: settingsIcon},
-	{id: "bluetoothDevices", group: "Settings", label: "Bluetooth and Devices",
+	{id: "bluetoothDevices", group: "Settings",
 		target: "ms-settings:bluetooth", icon: settingsIcon},
-	{id: "networkSettings", group: "Settings", label: "Network and Internet",
+	{id: "networkSettings", group: "Settings",
 		target: "ms-settings:network", icon: settingsIcon},
-	{id: "defaultApps", group: "Settings", label: "Default Apps",
+	{id: "defaultApps", group: "Settings",
 		target: "ms-settings:defaultapps", icon: settingsIcon},
-	{id: "powerSettings", group: "Settings", label: "Power and Sleep",
+	{id: "powerSettings", group: "Settings",
 		target: "ms-settings:powersleep", icon: settingsIcon},
-	{id: "storage", group: "Settings", label: "Storage",
+	{id: "storage", group: "Settings",
 		target: "ms-settings:storagesense", icon: settingsIcon},
-	{id: "about", group: "Settings", label: "About This PC",
+	{id: "about", group: "Settings",
 		target: "ms-settings:about", icon: settingsIcon},
-	{id: "printers", group: "Settings", label: "Printers and Scanners",
+	{id: "printers", group: "Settings",
 		target: "ms-settings:printers", icon: settingsIcon},
 
 	// --- Places -----------------------------------------------------------
@@ -173,77 +172,77 @@ var specials = []specialEntry{
 	// the shell image factory instead; see isShellMoniker in icons.go. That is
 	// not a workaround but the better answer: it gives the Recycle Bin its
 	// current full-or-empty icon rather than a fixed frame.
-	{id: "recycleBin", group: "Places", label: "Recycle Bin",
+	{id: "recycleBin", group: "Places",
 		target: "shell:RecycleBinFolder"},
-	{id: "thisPC", group: "Places", label: "This PC",
+	{id: "thisPC", group: "Places",
 		target: "shell:MyComputerFolder"},
-	{id: "userProfile", group: "Places", label: "User Profile",
+	{id: "userProfile", group: "Places",
 		target: "%USERPROFILE%"},
-	{id: "networkFolder", group: "Places", label: "Network",
+	{id: "networkFolder", group: "Places",
 		target: "shell:NetworkPlacesFolder"},
-	{id: "fonts", group: "Places", label: "Fonts",
+	{id: "fonts", group: "Places",
 		target: "shell:Fonts"},
-	{id: "startup", group: "Places", label: "Startup Folder",
+	{id: "startup", group: "Places",
 		target: "shell:Startup"},
-	{id: "sendTo", group: "Places", label: "Send To Folder",
+	{id: "sendTo", group: "Places",
 		target: "shell:SendTo"},
-	{id: "temp", group: "Places", label: "Temp Folder",
+	{id: "temp", group: "Places",
 		target: "%TEMP%"},
 
 	// --- Folders (dynamic submenus) ----------------------------------------
 	// Enumerated when opened; see dynamic.go. Icons come from the folder itself.
-	{id: "startMenu", group: "Folders", label: "Start Menu", kind: kindDyn, roots: []string{
+	{id: "startMenu", group: "Folders", kind: kindDyn, roots: []string{
 		`%APPDATA%\Microsoft\Windows\Start Menu\Programs`,
 		`%ProgramData%\Microsoft\Windows\Start Menu\Programs`,
 	}},
-	{id: "windowsTools", group: "Folders", label: "Windows Tools", kind: kindDyn, roots: []string{
+	{id: "windowsTools", group: "Folders", kind: kindDyn, roots: []string{
 		`%ProgramData%\Microsoft\Windows\Start Menu\Programs\Administrative Tools`,
 	}},
-	{id: "desktop", group: "Folders", label: "Desktop", kind: kindDyn, roots: []string{
+	{id: "desktop", group: "Folders", kind: kindDyn, roots: []string{
 		`%USERPROFILE%\Desktop`,
 		`%PUBLIC%\Desktop`,
 	}},
-	{id: "documents", group: "Folders", label: "Documents", kind: kindDyn,
+	{id: "documents", group: "Folders", kind: kindDyn,
 		roots: []string{`%USERPROFILE%\Documents`}},
-	{id: "downloads", group: "Folders", label: "Downloads", kind: kindDyn,
+	{id: "downloads", group: "Folders", kind: kindDyn,
 		roots: []string{`%USERPROFILE%\Downloads`}},
-	{id: "pictures", group: "Folders", label: "Pictures", kind: kindDyn,
+	{id: "pictures", group: "Folders", kind: kindDyn,
 		roots: []string{`%USERPROFILE%\Pictures`}},
 
 	// --- Shell namespace (dynamic submenus) --------------------------------
 	// Listed through IEnumShellItems rather than the filesystem, because none of
 	// these are directories: a Store app has no path at all, and a Control Panel
 	// applet is a namespace item.
-	{id: "allApps", group: "Shell", label: "All Apps", kind: kindDyn,
+	{id: "allApps", group: "Shell", kind: kindDyn,
 		dynKind: dynShell, roots: []string{"shell:AppsFolder"},
 		icon: sys32 + "shell32.dll,-16"},
-	{id: "drives", group: "Shell", label: "Drives", kind: kindDyn,
+	{id: "drives", group: "Shell", kind: kindDyn,
 		dynKind: dynShell, roots: []string{"shell:MyComputerFolder"}, drivesOnly: true,
 		icon: sys32 + "imageres.dll,-30"},
-	{id: "controlPanel", group: "Shell", label: "Control Panel Items", kind: kindDyn,
+	{id: "controlPanel", group: "Shell", kind: kindDyn,
 		dynKind: dynShell, roots: []string{"shell:ControlPanelFolder"},
 		icon: sys32 + "control.exe,0"},
-	{id: "allSettings", group: "Shell", label: "All Settings", kind: kindDyn,
+	{id: "allSettings", group: "Shell", kind: kindDyn,
 		dynKind: dynSettings, icon: settingsIcon},
 
 	// --- Power -------------------------------------------------------------
 	// These are the only entries that are not a target at all; see power.go.
 	// The icons come from shell32, which is where the classic Shut Down dialog
 	// has always kept them.
-	{id: "lock", group: "Power", label: "Lock", kind: kindAction,
+	{id: "lock", group: "Power", kind: kindAction,
 		icon: sys32 + "shell32.dll,47"},
-	{id: "signOut", group: "Power", label: "Sign Out", kind: kindAction,
+	{id: "signOut", group: "Power", kind: kindAction,
 		icon: sys32 + "imageres.dll,209"},
-	{id: "sleep", group: "Power", label: "Sleep", kind: kindAction,
+	{id: "sleep", group: "Power", kind: kindAction,
 		icon: sys32 + "shell32.dll,25"},
 	// Hibernate deliberately shares Sleep's glyph: Windows ships no distinct
 	// hibernate icon, and inventing a different one would imply a distinction
 	// the system itself does not draw.
-	{id: "hibernate", group: "Power", label: "Hibernate", kind: kindAction,
+	{id: "hibernate", group: "Power", kind: kindAction,
 		icon: sys32 + "shell32.dll,25"},
-	{id: "restart", group: "Power", label: "Restart", kind: kindAction,
+	{id: "restart", group: "Power", kind: kindAction,
 		icon: sys32 + "imageres.dll,229"},
-	{id: "shutdown", group: "Power", label: "Shut Down", kind: kindAction,
+	{id: "shutdown", group: "Power", kind: kindAction,
 		icon: sys32 + "shell32.dll,27"},
 }
 
@@ -260,63 +259,65 @@ const settingsIcon = `%SystemRoot%\ImmersiveControlPanel\SystemSettings.exe,-10`
 // set. The drift is graceful: a URI a given Windows build does not know opens
 // the Settings home page rather than failing, so an outdated entry is a mild
 // annoyance and never a broken menu.
-type settingsPage struct{ group, label, uri string }
+// group is a stable identifier, like specialEntry.id -- not display text.
+// settingsGroupLabel resolves it to the group header shown in the menu.
+type settingsPage struct{ group, uri string }
 
 var settingsPages = []settingsPage{
-	{"System", "Display", "ms-settings:display"},
-	{"System", "Sound", "ms-settings:sound"},
-	{"System", "Notifications", "ms-settings:notifications"},
-	{"System", "Power and Battery", "ms-settings:powersleep"},
-	{"System", "Storage", "ms-settings:storagesense"},
-	{"System", "Multitasking", "ms-settings:multitasking"},
-	{"System", "Clipboard", "ms-settings:clipboard"},
-	{"System", "About", "ms-settings:about"},
+	{"system", "ms-settings:display"},
+	{"system", "ms-settings:sound"},
+	{"system", "ms-settings:notifications"},
+	{"system", "ms-settings:powersleep"},
+	{"system", "ms-settings:storagesense"},
+	{"system", "ms-settings:multitasking"},
+	{"system", "ms-settings:clipboard"},
+	{"system", "ms-settings:about"},
 
-	{"Devices", "Bluetooth and Devices", "ms-settings:bluetooth"},
-	{"Devices", "Printers and Scanners", "ms-settings:printers"},
-	{"Devices", "Mouse", "ms-settings:mousetouchpad"},
-	{"Devices", "Touchpad", "ms-settings:devices-touchpad"},
-	{"Devices", "AutoPlay", "ms-settings:autoplay"},
-	{"Devices", "USB", "ms-settings:usb"},
+	{"devices", "ms-settings:bluetooth"},
+	{"devices", "ms-settings:printers"},
+	{"devices", "ms-settings:mousetouchpad"},
+	{"devices", "ms-settings:devices-touchpad"},
+	{"devices", "ms-settings:autoplay"},
+	{"devices", "ms-settings:usb"},
 
-	{"Network", "Status", "ms-settings:network-status"},
-	{"Network", "Wi-Fi", "ms-settings:network-wifi"},
-	{"Network", "Ethernet", "ms-settings:network-ethernet"},
-	{"Network", "VPN", "ms-settings:network-vpn"},
-	{"Network", "Mobile Hotspot", "ms-settings:network-mobilehotspot"},
-	{"Network", "Proxy", "ms-settings:network-proxy"},
+	{"network", "ms-settings:network-status"},
+	{"network", "ms-settings:network-wifi"},
+	{"network", "ms-settings:network-ethernet"},
+	{"network", "ms-settings:network-vpn"},
+	{"network", "ms-settings:network-mobilehotspot"},
+	{"network", "ms-settings:network-proxy"},
 
-	{"Personalisation", "Background", "ms-settings:personalization-background"},
-	{"Personalisation", "Colours", "ms-settings:personalization-colors"},
-	{"Personalisation", "Themes", "ms-settings:themes"},
-	{"Personalisation", "Lock Screen", "ms-settings:lockscreen"},
-	{"Personalisation", "Taskbar", "ms-settings:taskbar"},
-	{"Personalisation", "Start", "ms-settings:personalization-start"},
-	{"Personalisation", "Fonts", "ms-settings:fonts"},
+	{"personalisation", "ms-settings:personalization-background"},
+	{"personalisation", "ms-settings:personalization-colors"},
+	{"personalisation", "ms-settings:themes"},
+	{"personalisation", "ms-settings:lockscreen"},
+	{"personalisation", "ms-settings:taskbar"},
+	{"personalisation", "ms-settings:personalization-start"},
+	{"personalisation", "ms-settings:fonts"},
 
-	{"Apps", "Installed Apps", "ms-settings:appsfeatures"},
-	{"Apps", "Default Apps", "ms-settings:defaultapps"},
-	{"Apps", "Startup Apps", "ms-settings:startupapps"},
-	{"Apps", "Optional Features", "ms-settings:optionalfeatures"},
+	{"apps", "ms-settings:appsfeatures"},
+	{"apps", "ms-settings:defaultapps"},
+	{"apps", "ms-settings:startupapps"},
+	{"apps", "ms-settings:optionalfeatures"},
 
-	{"Accounts", "Your Info", "ms-settings:yourinfo"},
-	{"Accounts", "Sign-in Options", "ms-settings:signinoptions"},
-	{"Accounts", "Other Users", "ms-settings:otherusers"},
-	{"Accounts", "Windows Backup", "ms-settings:backup"},
+	{"accounts", "ms-settings:yourinfo"},
+	{"accounts", "ms-settings:signinoptions"},
+	{"accounts", "ms-settings:otherusers"},
+	{"accounts", "ms-settings:backup"},
 
-	{"Time and Language", "Date and Time", "ms-settings:dateandtime"},
-	{"Time and Language", "Language and Region", "ms-settings:regionlanguage"},
-	{"Time and Language", "Typing", "ms-settings:typing"},
+	{"timeAndLanguage", "ms-settings:dateandtime"},
+	{"timeAndLanguage", "ms-settings:regionlanguage"},
+	{"timeAndLanguage", "ms-settings:typing"},
 
-	{"Privacy and Security", "Windows Update", "ms-settings:windowsupdate"},
-	{"Privacy and Security", "Windows Security", "ms-settings:windowsdefender"},
-	{"Privacy and Security", "Recovery", "ms-settings:recovery"},
-	{"Privacy and Security", "Activation", "ms-settings:activation"},
-	{"Privacy and Security", "For Developers", "ms-settings:developers"},
-	{"Privacy and Security", "Location", "ms-settings:privacy-location"},
-	{"Privacy and Security", "Camera", "ms-settings:privacy-webcam"},
-	{"Privacy and Security", "Microphone", "ms-settings:privacy-microphone"},
-	{"Privacy and Security", "Troubleshoot", "ms-settings:troubleshoot"},
+	{"privacyAndSecurity", "ms-settings:windowsupdate"},
+	{"privacyAndSecurity", "ms-settings:windowsdefender"},
+	{"privacyAndSecurity", "ms-settings:recovery"},
+	{"privacyAndSecurity", "ms-settings:activation"},
+	{"privacyAndSecurity", "ms-settings:developers"},
+	{"privacyAndSecurity", "ms-settings:privacy-location"},
+	{"privacyAndSecurity", "ms-settings:privacy-webcam"},
+	{"privacyAndSecurity", "ms-settings:privacy-microphone"},
+	{"privacyAndSecurity", "ms-settings:troubleshoot"},
 }
 
 // specialAliases maps spellings people reach for onto canonical ids. Kept small
@@ -386,6 +387,11 @@ func lookupSpecial(id string) (specialEntry, bool) {
 // otherwise the only place to discover them, and a config file is a poor place
 // to go looking.
 func listSpecials() int {
+	// englishDefaults(), not the package-level ui: this listing is a stable
+	// reference for the id regardless of the active language, so it always
+	// re-reads the embedded English catalog directly rather than whatever
+	// language happens to be loaded.
+	en := englishDefaults()
 	group := ""
 	for _, e := range specials {
 		if e.group != group {
@@ -399,7 +405,7 @@ func listSpecials() int {
 		case kindDyn:
 			target = "(submenu)"
 		}
-		fmt.Printf("  %-22s %-30s %s\n", e.id, e.label, target)
+		fmt.Printf("  %-22s %-30s %s\n", e.id, en.Specials[e.id], target)
 	}
 	fmt.Printf("\n%d special(s). Use as: { \"special\": \"<id>\" }\n", len(specials))
 	fmt.Printf("label and icon are supplied automatically; set either one to override.\n")

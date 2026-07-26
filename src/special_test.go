@@ -15,7 +15,7 @@ import (
 func TestSpecialCatalogWellFormed(t *testing.T) {
 	seen := map[string]bool{}
 	for _, e := range specials {
-		if e.id == "" || e.label == "" || e.group == "" {
+		if e.id == "" || e.group == "" {
 			t.Errorf("incomplete entry: %+v", e)
 			continue
 		}

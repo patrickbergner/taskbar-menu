@@ -15,8 +15,9 @@ import (
 type Config struct {
 	TrayIcon  *bool      `json:"trayIcon"`
 	IconSize  int32      `json:"iconSize"`
-	Theme     string     `json:"theme"`  // auto | dark | light
-	Anchor    string     `json:"anchor"` // taskbar | cursor
+	Theme     string     `json:"theme"`    // auto | dark | light
+	Anchor    string     `json:"anchor"`   // taskbar | cursor
+	Language  string     `json:"language"` // auto | a language tag such as "de"
 	Items     []Item     `json:"items"`
 	Launchers []Launcher `json:"launchers"`
 
@@ -118,6 +119,7 @@ func defaultConfig() *Config {
 		IconSize: 16,
 		Theme:    "auto",
 		Anchor:   "taskbar",
+		Language: "auto",
 	}
 }
 
@@ -201,6 +203,10 @@ func (c *Config) normalize() {
 	}
 	c.Theme = normEnum(c, "theme", c.Theme, "auto", "auto", "dark", "light")
 	c.Anchor = normEnum(c, "anchor", c.Anchor, "taskbar", "taskbar", "cursor")
+	c.Language = strings.ToLower(strings.TrimSpace(c.Language))
+	if c.Language == "" {
+		c.Language = "auto"
+	}
 	if c.TrayIcon == nil {
 		t := true
 		c.TrayIcon = &t
@@ -249,7 +255,7 @@ func (c *Config) normLaunchers() {
 				l.Exec, l.AppID = "", ""
 			}
 			if l.Label == "" {
-				l.Label = e.label
+				l.Label = specialLabel(e)
 			}
 			exec, args, icon := e.resolved()
 			if l.Icon == "" {
@@ -392,7 +398,7 @@ func (c *Config) normItems(items []Item, path string) []Item {
 				continue
 			}
 			if it.Label == "" {
-				it.Label = e.label
+				it.Label = specialLabel(e)
 			}
 			exec, args, icon := e.resolved()
 			if it.Icon == "" {
