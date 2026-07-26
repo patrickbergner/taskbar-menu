@@ -127,42 +127,51 @@ func menuFont(dpi uint32) syscall.Handle {
 // WM_MEASUREITEM / WM_DRAWITEM
 // ---------------------------------------------------------------------------
 
-func (a *appState) onMeasureItem(mis *MEASUREITEMSTRUCT) bool {
-	n := a.nodeFromData(mis.ItemData)
-	if n == nil {
-		return false
-	}
+// measure returns the size one item occupies, in device pixels.
+//
+// Split out of onMeasureItem because column layout has to predict the same
+// numbers before the menu exists: WM_MEASUREITEM only arrives once Windows is
+// already building the popup window, far too late to decide where the columns
+// break. Both callers coming through here is what stops the prediction and the
+// measurement drifting apart.
+//
+// hdc is the caller's to own, so laying out a several-hundred-entry split does
+// not pay a GetDC per entry inside WM_INITMENUPOPUP.
+func (a *appState) measure(hdc syscall.Handle, n *node) (int32, int32) {
 	m := a.metrics
-
-	if n.separator {
-		mis.ItemWidth = 0
-		mis.ItemHeight = uint32(m.sepH)
-		return true
+	switch {
+	case n.separator:
+		return 0, m.sepH
+	case n.spacer:
+		return 0, m.frameH
 	}
 
-	if n.spacer {
-		mis.ItemWidth = 0
-		mis.ItemHeight = uint32(m.frameH)
-		return true
-	}
-
-	hdc := getDC(0)
-	defer releaseDC(0, hdc)
 	old := selectObject(hdc, a.font)
 	sz := textExtent(hdc, n.label)
 	selectObject(hdc, old)
 
 	w := m.padX + m.iconSize + m.gutter + sz.CX + m.rightPad
-	if len(n.children) > 0 {
+	if n.hasSubmenu() {
 		w += m.arrowW
 	}
 	h := sz.CY
 	if m.iconSize > h {
 		h = m.iconSize
 	}
+	return w, h + 2*m.padY
+}
 
+func (a *appState) onMeasureItem(mis *MEASUREITEMSTRUCT) bool {
+	n := a.nodeFromData(mis.ItemData)
+	if n == nil {
+		return false
+	}
+	hdc := getDC(0)
+	defer releaseDC(0, hdc)
+
+	w, h := a.measure(hdc, n)
 	mis.ItemWidth = uint32(w)
-	mis.ItemHeight = uint32(h + 2*m.padY)
+	mis.ItemHeight = uint32(h)
 	return true
 }
 
@@ -208,6 +217,21 @@ func (a *appState) onDrawItem(dis *DRAWITEMSTRUCT) bool {
 		}
 	}
 
+	// Entries from a dynamic submenu defer their icon to here, so a folder of
+	// three hundred files only ever pays for the twenty or so on screen.
+	//
+	// Both halves are deferred, and the source half is the one that matters:
+	// resolving it runs SHGetFileInfoW -- which for a .lnk means opening and
+	// parsing the shortcut -- so doing it eagerly would put a shell round-trip
+	// per entry inside WM_INITMENUPOPUP, with the menu frozen for the duration.
+	// iconFile holds the raw path until now; both lookups are cached, so
+	// scrolling back over an item costs nothing.
+	if n.iconLazy && n.icon == 0 && n.iconFile != "" {
+		file, idx := resolveIconSource(n.iconFile, "")
+		n.icon = iconFor(file, idx, m.iconSize)
+		n.iconLazy = false
+	}
+
 	iconX := r.Left + m.padX
 	if n.icon != 0 {
 		iconY := r.Top + (r.Bottom-r.Top-m.iconSize)/2
@@ -215,7 +239,7 @@ func (a *appState) onDrawItem(dis *DRAWITEMSTRUCT) bool {
 	}
 
 	textRight := r.Right - m.rightPad
-	if len(n.children) > 0 {
+	if n.hasSubmenu() {
 		textRight -= m.arrowW
 	}
 	textRect := RECT{iconX + m.iconSize + m.gutter, r.Top, textRight, r.Bottom}
@@ -239,7 +263,7 @@ func (a *appState) onDrawItem(dis *DRAWITEMSTRUCT) bool {
 	// doesn't run into it. Instead, a correctly-coloured replacement is posted
 	// for right after this redraw cycle finishes; see wmFixArrows in main.go
 	// and paintSubmenuArrows in border.go.
-	if len(n.children) > 0 && borderHook != 0 {
+	if n.hasSubmenu() && borderHook != 0 {
 		postMessage(a.hwnd, wmFixArrows, 0, 0)
 	}
 	return true

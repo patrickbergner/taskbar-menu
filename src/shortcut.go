@@ -190,8 +190,75 @@ func shortcutIcon(l Launcher) (string, int32, bool) {
 	return "", 0, false
 }
 
+// usableShortcutIcon rejects the sources a .lnk cannot express. A shell moniker
+// is one of them for the same reason a Store logo is: IShellLink::SetIconLocation
+// takes a file plus an index, and neither a "shell:" path nor an image file is
+// one. Another .lnk is rejected on the same grounds -- resolveIconSource returns
+// one only when there is nothing extractable behind it, so pointing at it would
+// write a shortcut with a blank icon.
 func usableShortcutIcon(file string) bool {
-	return file != "" && !isImageFile(file) && !isAppsFolder(file)
+	return file != "" && !isImageFile(file) && !isShellMoniker(file) && !isLinkFile(file)
+}
+
+// ---------------------------------------------------------------------------
+// Reading a shortcut
+// ---------------------------------------------------------------------------
+
+// linkIconSource reads where a .lnk's icon comes from: the explicit icon
+// location the shortcut stores, if it has one, and its target, which is where
+// the icon comes from when it does not.
+//
+// It lives here, beside the writer, because this is where IShellLink is already
+// understood -- but the reason it exists is icons.go's. A .lnk holds no icon
+// resources, so it has to be followed to something that does, and
+// SHGetFileInfo(SHGFI_ICONLOCATION) will not do it: on a plain Start Menu it
+// answers for the Office links and returns nothing at all for Firefox,
+// Thunderbird, VS Code or Chromium. Chromium's link does store an icon
+// location, so the shell is not passing on an absence -- it simply declines.
+// Reading the link answers both halves directly, and cannot decline.
+//
+// Load-only, never Resolve: Resolve goes looking for a target that has moved,
+// which for a link onto a disconnected share means blocking the menu's modal
+// loop until the SMB client gives up.
+func linkIconSource(path string) (icon string, idx int32, target string) {
+	link := coCreateInstance(&clsidShellLink, &iidShellLinkW)
+	if link == nil {
+		return "", 0, ""
+	}
+	defer release(link)
+
+	pf := comQI(link, &iidPersistFile)
+	if pf == nil {
+		return "", 0, ""
+	}
+	defer release(pf)
+
+	p := utf16Ptr(path)
+	hr := comCall(pf, persistFileLoad, uintptr(unsafe.Pointer(p)), stgmRead)
+	runtime.KeepAlive(p)
+	if hr != 0 {
+		return "", 0, ""
+	}
+
+	// One buffer for both calls: utf16ToString copies, so the second read is
+	// free to overwrite what the first returned.
+	buf := make([]uint16, 1024)
+	if comCall(link, shlGetIconLocation, uintptr(unsafe.Pointer(&buf[0])),
+		uintptr(len(buf)), uintptr(unsafe.Pointer(&idx))) == 0 {
+		icon = expandEnv(utf16ToString(buf))
+	}
+	if icon == "" {
+		idx = 0 // a failed GetIconLocation may still have written the index
+	}
+	// GetPath yields nothing for a link onto a non-filesystem target -- a Store
+	// app, a Control Panel item -- which is an ordinary shape in the Start Menu
+	// rather than an error. The caller falls back to the shell image factory.
+	if comCall(link, shlGetPath, uintptr(unsafe.Pointer(&buf[0])),
+		uintptr(len(buf)), 0, 0) == 0 {
+		target = utf16ToString(buf)
+	}
+	runtime.KeepAlive(buf)
+	return icon, idx, target
 }
 
 // aumid derives a launcher's AppUserModelID from its id and nothing else, so it
@@ -256,13 +323,16 @@ func sanitizeFileName(id string) string {
 
 const (
 	// IShellLinkW (after the three IUnknown slots).
+	shlGetPath             = 3
 	shlSetWorkingDirectory = 9
 	shlSetArguments        = 11
+	shlGetIconLocation     = 16
 	shlSetIconLocation     = 17
 	shlSetPath             = 20
 
 	// IPersistFile: IUnknown(0-2), IPersist::GetClassID(3), IsDirty(4), Load(5),
 	// Save(6).
+	persistFileLoad = 5
 	persistFileSave = 6
 
 	// IPropertyStore: IUnknown(0-2), GetCount(3), GetAt(4), GetValue(5),

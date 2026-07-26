@@ -49,14 +49,32 @@ type appState struct {
 	byID   map[uint32]*node
 	lastID uint32
 
+	// dynMenus maps a dynamic submenu's HMENU back to the node that produced it.
+	// WM_INITMENUPOPUP identifies the popup by handle and nothing else --
+	// dwItemData is an item property, and the popup being initialised is not an
+	// item. Rebuilt with the menu, so it can never name a destroyed handle.
+	dynMenus map[syscall.Handle]*node
+
 	menu     syscall.Handle
 	trayMenu syscall.Handle
 
 	builtDPI uint32
-	metrics  metrics
-	palette  palette
-	font     syscall.Handle
-	bgBrush  syscall.Handle
+	// menuDirty says the contents are stale while the measurements are still
+	// good -- a dynamic config on every show. Kept apart from builtDPI so that
+	// "rebuild the item tree" and "the DPI changed" stay different questions;
+	// overloading builtDPI = 0 for both made a font and brush recreation the
+	// price of a fresh directory listing.
+	menuDirty bool
+	metrics   metrics
+	palette   palette
+	font      syscall.Handle
+	bgBrush   syscall.Handle
+
+	// work is the work area of the monitor the menu was last built for, and the
+	// height the column split is budgeted against. Part of what ensureBuilt
+	// caches on, because two monitors can share a DPI and still differ here --
+	// only one of them has the taskbar.
+	work RECT
 
 	trayAdded bool
 	showing   bool
@@ -136,6 +154,9 @@ func main() {
 	case opts.pickIcon != "":
 		attachParentConsole()
 		os.Exit(pickIcon(opts.pickIcon))
+	case opts.listSpecials:
+		attachParentConsole()
+		os.Exit(listSpecials())
 	case opts.check:
 		attachParentConsole()
 		os.Exit(checkConfig(defaultConfigPath(opts.cfgPath)))
@@ -192,6 +213,7 @@ type options struct {
 	check        bool
 	listIcons    string
 	pickIcon     string
+	listSpecials bool
 	launch       string // run the launcher entry with this id/label, then exit
 	makeLauncher string // write a pinnable .lnk for this launcher id/label
 	makeAll      bool   // write a .lnk for every launcher entry
@@ -219,6 +241,8 @@ func parseArgs(args []string) (options, error) {
 			o.listIcons, err = value(a)
 		case "--pick-icon":
 			o.pickIcon, err = value(a)
+		case "--list-specials":
+			o.listSpecials = true
 		case "--launch":
 			o.launch, err = value(a)
 		case "--make-launcher":
@@ -252,6 +276,7 @@ Usage:
   TaskbarMenu.exe [--config <path>] [--background]
   TaskbarMenu.exe --list-icons <file>
   TaskbarMenu.exe --pick-icon  <file>
+  TaskbarMenu.exe --list-specials
   TaskbarMenu.exe --launch <id>
   TaskbarMenu.exe --make-launcher  <id> [--out <dir>]
   TaskbarMenu.exe --make-launchers [--out <dir>]
@@ -271,6 +296,7 @@ Options:
       --check             Validate the config and list every entry, then exit
       --list-icons <f>    Report how many icons a .exe/.dll/.ico holds
       --pick-icon  <f>    Open the Windows icon picker, print a config spec
+      --list-specials     List the built-in "special" entry ids
       --launch <id>       Start the launcher entry with this id (or label)
       --make-launcher <id>  Write a pinnable .lnk for one launcher entry
       --make-launchers    Write a .lnk for every launcher entry
@@ -339,6 +365,7 @@ func checkConfig(path string) int {
 // now is still a valid entry.
 func printItems(items []Item, indent string) (leaves, subs, seps int) {
 	for _, it := range items {
+		dyn := dynSourceFor(it)
 		switch {
 		case it.Type == "separator":
 			fmt.Printf("%s----\n", indent)
@@ -348,12 +375,23 @@ func printItems(items []Item, indent string) (leaves, subs, seps int) {
 			subs++
 			l, s, p := printItems(it.Items, indent+"    ")
 			leaves, subs, seps = leaves+l, subs+s, seps+p
+		case dyn != nil:
+			// Contents are discovered when the menu is opened, so there is
+			// nothing to list here -- report where they will come from instead.
+			fmt.Printf("%s%s  >  (%s)\n", indent, it.Label, dynSummary(dyn))
+			subs++
 		default:
 			// A Store app is named by its AppUserModelID rather than a path;
-			// there is nothing on disk to stat, so it is reported as-is.
+			// there is nothing on disk to stat, so it is reported as-is. A
+			// surviving special is a built-in with no target at all.
 			target := it.Exec
 			note := ""
-			if it.AppID != "" {
+			if it.Special != "" {
+				target = "built-in: " + it.Special
+				if it.confirms() {
+					note = "   [confirms]"
+				}
+			} else if it.AppID != "" {
 				target = "appId: " + it.AppID
 			} else if urlScheme(it.Exec) == "" {
 				if _, err := os.Stat(it.Exec); err != nil {
@@ -371,6 +409,8 @@ func printItems(items []Item, indent string) (leaves, subs, seps int) {
 			switch {
 			case isAppsFolder(file):
 				icon = "app icon"
+			case isShellMoniker(file):
+				icon = "shell icon"
 			case file != "":
 				icon = fmt.Sprintf("%s,%d", filepath.Base(file), idx)
 			}
@@ -533,6 +573,13 @@ func wndProc(hwnd, msg, wp, lp uintptr) uintptr {
 		a.onTrayMessage(lp)
 		return 0
 
+	case wmInitMenuPopup:
+		// HIWORD(lParam) is 1 for the window menu, which is never one of ours.
+		if uint16(lp>>16) == 0 {
+			a.onInitMenuPopup(syscall.Handle(wp))
+		}
+		return 0
+
 	case wmMeasureItem:
 		if a.onMeasureItem(winPtr[MEASUREITEMSTRUCT](lp)) {
 			return 1
@@ -584,10 +631,40 @@ func (a *appState) showMenu(cursor POINT) {
 		return // TrackPopupMenuEx is modal and pumps messages; do not re-enter
 	}
 	a.reload(false)
+	a.refreshDynamic()
 
 	p := resolvePlacement(cursor, a.cfg.Anchor)
-	a.ensureBuilt(p.dpi)
+	a.ensureBuilt(p.dpi, p.work)
 	a.invoke(a.track(a.menu, p))
+}
+
+// iconCacheMax bounds the icons a long-lived session accumulates. A process has
+// a 10,000 GDI object budget, and browsing dynamic submenus mints an icon per
+// file seen; exhausting it makes the menu lose its icons and then stop drawing
+// at all, which is a baffling failure to debug months later.
+const iconCacheMax = 1024
+
+// refreshDynamic discards the cached menu when the config enumerates anything,
+// so each show sees the current contents of the directories it names.
+//
+// The rebuild is not the expense it looks like: ensureBuilt already runs after
+// every config change, resolveIconSource is memoized and the extracted icons are
+// cached, so what is repeated is allocation and one InsertMenuItemW per static
+// entry. A config with no dynamic entries keeps the cached menu exactly as
+// before.
+func (a *appState) refreshDynamic() {
+	if a.cfg == nil || !a.cfg.HasDynamic {
+		return
+	}
+	// Purging is only safe while no menu is on screen and one is about to be
+	// rebuilt -- under a cached menu it would leave live nodes holding freed
+	// icon handles. Only the GDI handles go: the shell listings are not what the
+	// cap is about, and dropping them would make the next "All Apps" pay the
+	// full enumeration again for an unrelated reason.
+	if len(iconCache) > iconCacheMax || len(iconSourceCache) > iconSourceCacheMax {
+		purgeIcons()
+	}
+	a.menuDirty = true
 }
 
 func (a *appState) showTrayMenu(cursor POINT) {
@@ -596,7 +673,7 @@ func (a *appState) showTrayMenu(cursor POINT) {
 	}
 	a.reload(false)
 	p := resolvePlacement(cursor, a.cfg.Anchor)
-	a.ensureBuilt(p.dpi)
+	a.ensureBuilt(p.dpi, p.work)
 	a.invoke(a.track(a.trayMenu, p))
 }
 
@@ -627,13 +704,49 @@ func (a *appState) track(menu syscall.Handle, p placement) uint32 {
 	tpm.Size = uint32(unsafe.Sizeof(tpm))
 	tpm.RcExclude = p.exclude
 
-	flags := p.flags | tpmReturnCmd | tpmNoNotify | tpmLeftButton | tpmWorkArea
+	// tpmNoNotify is deliberately not set. It suppresses WM_INITMENUPOPUP, which
+	// is what dynamic submenus are populated from -- measured on Windows 11,
+	// where the message never arrives with the flag present. Dropping it is
+	// safe: tpmReturnCmd already means the chosen id comes back from this call
+	// instead of arriving as a WM_COMMAND, so nothing is invoked twice. The only
+	// other messages it lets through are WM_ENTERMENULOOP/WM_EXITMENULOOP and
+	// WM_MENUSELECT, none of which this window handles.
+	flags := p.flags | tpmReturnCmd | tpmLeftButton | tpmWorkArea
 	cmd := trackPopupMenuEx(menu, flags, p.x, p.y, a.hwnd, &tpm)
 
 	// The other half of the classic dismissal fix: without this the menu can
 	// linger after a click outside it.
 	postMessage(a.hwnd, wmNull, 0, 0)
 	return cmd
+}
+
+// onInitMenuPopup fills a dynamic submenu the first time it is opened.
+//
+// Windows sends this synchronously from the menu's modal loop, just before the
+// popup is shown, and items inserted here are measured and drawn like any other
+// -- which is the whole reason lazy population is possible at all. It is also
+// why this must stay quick: the menu is frozen for its duration and there is no
+// way to show progress inside a popup.
+//
+// Note that tpmNoNotify is deliberately absent from the flags in track(): it
+// suppresses this message entirely.
+func (a *appState) onInitMenuPopup(menu syscall.Handle) {
+	n := a.dynMenus[menu]
+	if n == nil || n.populated || n.dyn == nil {
+		return
+	}
+	n.populated = true
+
+	start := time.Now()
+	n.children = a.expand(n.dyn)
+	a.resolveIcons(n.children)
+	a.fillMenu(menu, n.children)
+	logf("populated %q: %d entries in %v", n.label, len(n.children), time.Since(start))
+
+	// applyMenuBackground on the root only reached the submenus that existed
+	// when it ran. A second level created just now missed it, and would draw a
+	// light frame in dark mode.
+	a.applyMenuBackground(menu)
 }
 
 func (a *appState) invoke(id uint32) {
@@ -676,8 +789,8 @@ func (a *appState) reload(force bool) {
 		a.cfg = cfg
 	}
 
-	purgeIcons()
-	a.builtDPI = 0 // force rebuild on next show
+	purgeCaches()
+	a.builtDPI = 0 // force a full rebuild, measurements included
 	a.refreshTrayTip()
 }
 
@@ -698,30 +811,48 @@ func (a *appState) reloadInteractive() {
 	}
 }
 
-// ensureBuilt rebuilds the HMENU when the DPI changed or the config was
-// reloaded. The DPI check is not an optimisation detail: WM_MEASUREITEM is only
-// sent the first time a menu is displayed, so a menu built at 96 DPI keeps its
-// old item sizes on a 192 DPI monitor unless it is rebuilt.
-func (a *appState) ensureBuilt(dpi uint32) {
-	if a.builtDPI == dpi && a.menu != 0 {
+// ensureBuilt rebuilds the HMENU when the DPI or the work area changed, or the
+// config was reloaded. The DPI check is not an optimisation detail:
+// WM_MEASUREITEM is only sent the first time a menu is displayed, so a menu
+// built at 96 DPI keeps its old item sizes on a 192 DPI monitor unless it is
+// rebuilt. The work area is checked for the same reason one step removed -- the
+// column breaks are baked into the items at insert time, so a menu split for a
+// 1080p monitor keeps that split on a taller one until it is rebuilt.
+func (a *appState) ensureBuilt(dpi uint32, work RECT) {
+	if a.builtDPI == dpi && a.work == work && a.menu != 0 && !a.menuDirty {
 		return
 	}
+	started := time.Now()
+	a.work = work // fillMenu budgets the column split against this
+
+	// Two different reasons to be here, with very different costs. A DPI or
+	// theme change invalidates the palette, the font and the brushes; merely
+	// wanting fresh dynamic contents does not. Telling them apart keeps three
+	// registry reads, an SPI_GETNONCLIENTMETRICS, a font creation and a full
+	// rebuild of the (never dynamic) tray menu off the every-click path.
+	remeasure := a.builtDPI != dpi || a.font == 0
 
 	destroyMenu(a.menu)
-	destroyMenu(a.trayMenu)
-	a.menu, a.trayMenu = 0, 0
+	a.menu = 0
+	if remeasure {
+		destroyMenu(a.trayMenu)
+		a.trayMenu = 0
+	}
 	a.flat = nil
 	a.byID = map[uint32]*node{}
+	a.dynMenus = map[syscall.Handle]*node{}
 	a.lastID = 0
 
-	a.palette = resolvePalette(a.cfg.Theme)
-	a.metrics = computeMetrics(dpi, a.cfg.IconSize)
+	if remeasure {
+		a.palette = resolvePalette(a.cfg.Theme)
+		a.metrics = computeMetrics(dpi, a.cfg.IconSize)
 
-	deleteObject(a.font)
-	a.font = menuFont(dpi)
+		deleteObject(a.font)
+		a.font = menuFont(dpi)
 
-	deleteObject(a.bgBrush)
-	a.bgBrush = createSolidBrush(a.palette.bg)
+		deleteObject(a.bgBrush)
+		a.bgBrush = createSolidBrush(a.palette.bg)
+	}
 
 	var nodes []*node
 	if a.cfgErr != nil {
@@ -743,12 +874,22 @@ func (a *appState) ensureBuilt(dpi uint32) {
 	a.menu = a.createMenu(nodes)
 	a.applyMenuBackground(a.menu)
 
+	// The tray menu is fixed content, so it only needs rebuilding when the
+	// metrics it was measured at changed. Its nodes still have to be registered
+	// every time though, because the flat slice they index into was just reset.
 	tray := a.trayNodes()
 	a.resolveIcons(tray)
-	a.trayMenu = a.createMenu(tray)
-	a.applyMenuBackground(a.trayMenu)
+	if a.trayMenu == 0 {
+		a.trayMenu = a.createMenu(tray)
+		a.applyMenuBackground(a.trayMenu)
+	} else {
+		a.fillMenu(a.trayMenu, tray)
+	}
 
 	a.builtDPI = dpi
+	a.menuDirty = false
+	logf("menu built: dpi=%d entries=%d remeasure=%v dynamic=%v took=%v",
+		dpi, len(nodes), remeasure, a.cfg.HasDynamic, time.Since(started))
 }
 
 func (a *appState) openConfig() { openPath(a.cfgPath) }
@@ -773,11 +914,16 @@ func winPtr[T any](lp uintptr) *T {
 
 // utf16PtrToString reads a NUL-terminated UTF-16 string of unknown length, used
 // for the WM_SETTINGCHANGE payload.
-func utf16PtrToString(p *uint16) string {
+func utf16PtrToString(p *uint16) string { return utf16PtrToStringN(p, 256) }
+
+// utf16PtrToStringN is the same read with an explicit ceiling. The cap is a
+// guard against a pointer that is not in fact NUL-terminated, so it has to suit
+// the caller: 256 units is plenty for a settings-change name but would silently
+// truncate a packaged app's parsing name into a target that fails to launch.
+func utf16PtrToStringN(p *uint16, max int) string {
 	if p == nil {
 		return ""
 	}
-	const max = 256
 	buf := make([]uint16, 0, 32)
 	for i := 0; i < max; i++ {
 		c := *(*uint16)(unsafe.Pointer(uintptr(unsafe.Pointer(p)) + uintptr(i)*2))

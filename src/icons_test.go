@@ -5,6 +5,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -245,6 +246,28 @@ func TestStoreAppIconResolves(t *testing.T) {
 		}
 	}
 	t.Skip("none of the probed Store apps are installed")
+}
+
+// A .msc registers DefaultIcon="%1" -- "the icon is in the file itself" -- and a
+// .msc holds no icon resources, so that is no answer. It must not become the
+// icon source: extraction from a literal "%1" can only fail, and the entry then
+// draws the generic square even though the shell knows perfectly well what
+// Explorer shows for it.
+func TestMscResolvesToARealIcon(t *testing.T) {
+	comSetup(t)
+	defer purgeCaches()
+
+	msc := expandEnv(`%SystemRoot%\System32\services.msc`)
+	if _, err := os.Stat(msc); err != nil {
+		t.Skip("services.msc absent on this SKU")
+	}
+	file, idx := resolveIconSource(msc, "")
+	if strings.Contains(file, "%1") {
+		t.Errorf("resolveIconSource(%q) = %q: the association placeholder leaked through", msc, file)
+	}
+	if iconFor(file, idx, 16) == genericIcon() {
+		t.Errorf("%s drew the generic icon (source %q,%d)", msc, file, idx)
+	}
 }
 
 func TestJSONEscape(t *testing.T) {

@@ -7,7 +7,7 @@ Pin one button to the taskbar, click it, and a popup menu of your
 applications, documents, folders and URLs opens right there - a start menu
 you fully control.
 
-  - Dark mode, High DPI and taskbar location agnostic.
+  - Dark mode, High DPI and Taskbar location agnostic.
   - Nested submenus, hot reload, per-entry working directory / elevation /
     window state.
   - ~10 ms per click, stays resident in the system tray.
@@ -92,20 +92,32 @@ Top level
 Entries
 .......
 
-  label       required. Display text.
+  label       required, except for a separator and for an entry with
+              special, which brings its own label. Display text.
   type        default "item". item | separator. Unknown values are skipped
               with a warning, never fatal.
   exec        an .exe, a document, a folder, a URL or a .lnk.
   appId       AppUserModelID of a Microsoft Store app. Alternative to exec,
               see MICROSOFT STORE APPS.
-  args        default []. Arguments as separate strings; quoting is handled
-              for you.
-  icon        default automatic. An .ico path, or "file,index". See ICONS.
+  special     a built-in Windows target named by a short id. Alternative
+              to exec, see SPECIAL ENTRIES.
+  args        default []. Arguments as separate strings; quoting is
+              handled for you.
+  icon        default automatic. An .ico path, or "file,index". See
+              ICONS.
   cwd         working directory.
   elevated    default false. Launch with the runas verb (UAC prompt).
   show        default "normal". normal | minimized | maximized | hidden.
-  items       turns the entry into a submenu, at any depth. exec is ignored
-              when present.
+  confirm     default depends. Only for a power action special. Ask
+              before acting. See POWER ACTIONS.
+  items       turns the entry into a submenu, at any depth. exec is
+              ignored when present.
+  folder      turns the entry into a submenu listing of a directory. See
+              FOLDER SUBMENUS.
+  depth       default 5, max 20. How many directory levels a folder
+              submenu descends.
+  limit       default 200, max 2000. Maximum entries shown per level of a
+              folder submenu.
 
 label, exec, icon, cwd and each args element expand %VAR% environment
 references. An unset variable is left verbatim, so a typo shows up in the
@@ -158,8 +170,9 @@ Start-menu app, Store apps included:
 
     Get-StartApps
 
-appId is an alternative to exec; if both are set, appId wins. The icon
-resolves automatically to the app's package logo.
+appId is an alternative to exec; if both are set, appId wins.
+
+The icon resolves automatically to the app's package logo.
 
 
 ICONS
@@ -204,12 +217,12 @@ differently-scaled displays stays crisp.
 PINNED LAUNCHERS
 ------------------------------------------------------------------------------
 
-Besides the popup menu, you can pin individual launchers to the taskbar that
-behave like the classic Windows launchers: each click starts a new instance
-of a target, and the button itself never turns into a running-app entry.
-
-They are defined in a separate launchers array: a flat list, disjoint from
-items, since the set you pin is usually not the set you keep in the menu:
+Besides the popup menu, you can pin individual launchers to the taskbar
+that behave like the classic Windows launchers: each click starts a new
+instance of a target, and the button itself never turns into a running-app
+entry. They are defined in a separate launchers array: a flat list,
+disjoint from items, since the set you pin is usually not the set you keep
+in the menu:
 
     {
       "launchers": [
@@ -222,13 +235,13 @@ items, since the set you pin is usually not the set you keep in the menu:
     }
 
 A launcher entry takes the same launch fields as a menu entry (exec / appId
-/ args / icon / cwd / elevated / show) plus a required id:
+/ special / args / icon / cwd / elevated / show) plus a required id:
 
   id          required. Stable key. --launch <id> resolves it and the
-              generated shortcut's AppUserModelID is built from it. Also the
-              .lnk file name.
-  label       display text for the shortcut; also accepted by --launch as a
-              fallback key.
+              generated shortcut's AppUserModelID is built from it. Also
+              the .lnk file name.
+  label       display text for the shortcut; also accepted by --launch as
+              a fallback key.
 
 Generate the shortcuts and pin them:
 
@@ -256,8 +269,164 @@ multiple instances (each serving a different --config) stay tellable apart.
 DARK MODE
 ------------------------------------------------------------------------------
 
-With theme set to auto (the default), the menu follows the system light/dark
-setting and switches live, without a restart; dark and light force one.
+With theme set to auto (the default), the menu follows the system
+light/dark setting and switches live, without a restart; dark and light
+force one.
+
+
+SPECIAL ENTRIES
+------------------------------------------------------------------------------
+
+There are special entries available for most of Windows' own tools like the
+device manager, task manager, Windows settings and so on:
+
+    { "special": "deviceManager" }
+    { "special": "taskManager" }
+    { "special": "windowsUpdate" }
+    { "special": "recycleBin" }
+
+That is a complete entry. The label and the icon come from the catalog, so
+special is the only key required. Set label or icon yourself to override
+either:
+
+    { "special": "deviceManager", "label": "Geraete-Manager" }
+    { "special": "environmentVariables",
+      "label": "Environment Variables (System)", "elevated": true }
+
+special is a third way to name a target, alongside exec and appId; if more
+than one is set, special wins. It works in launchers too, so a system tool
+can be pinned to the taskbar:
+
+    { "launchers": [ { "id": "devicemanager", "special": "deviceManager" } ] }
+
+Catalog
+.......
+
+Print the catalog:
+
+    TaskbarMenu.exe --list-specials
+
+  Management      deviceManager diskManagement computerManagement services
+                  taskScheduler eventViewer gpedit localUsers secpol
+                  firewall certificates perfmon resourceMonitor taskManager
+                  regedit msconfig systemInfo environmentVariables
+                  diskCleanup defrag mmc
+  Control Panel   controlPanelHome systemProperties networkConnections
+                  programsAndFeatures displayControl mouse soundControl
+                  internetOptions dateTime securityMaintenance
+                  bluetoothControl userAccounts
+  Settings        settings windowsUpdate installedApps displaySettings
+                  soundSettings bluetoothDevices networkSettings
+                  defaultApps powerSettings storage about printers
+  Places          recycleBin thisPC userProfile networkFolder fonts
+                  startup sendTo temp
+  Folders         startMenu windowsTools desktop documents downloads
+                  pictures (see FOLDER SUBMENUS)
+  Shell           allApps drives controlPanel allSettings
+                  (see SHELL SUBMENUS)
+  Power           lock signOut sleep hibernate restart shutdown
+                  (see POWER ACTIONS)
+
+IDs are matched case-insensitively. An unknown id is skipped with a warning
+rather than failing the file, so a config written for a newer build still
+opens.
+
+Two things worth knowing:
+
+  - Not every tool exists on every edition. gpedit and secpol are absent on
+    Windows Home. --check reports [target not found] for those; the entry
+    still appears in the menu.
+  - Labels are English regardless of the system language, because
+    resolving the localised name would cost a shell call per entry and
+    make --check print differently on every machine. Set label to
+    translate one.
+
+
+FOLDER SUBMENUS
+------------------------------------------------------------------------------
+
+folder turns an entry into a submenu of a directory's contents:
+
+    { "label": "Repos", "folder": "C:\\Data", "depth": 2 }
+    { "folder": "%USERPROFILE%\\Downloads" }
+
+The listing is read when the submenu is opened, not at startup, so it
+always shows what is there.
+
+The submenu leads with an "Open ..." item and a separator, so the folder
+itself is still one click away. Directories come first, then files, each
+alphabetical. Hidden and system entries are skipped, as are junctions and
+symlinks.
+
+Six special entry catalog IDs are folder submenus over well-known
+locations:
+
+    { "special": "startMenu" }
+    { "special": "windowsTools" }
+    { "special": "desktop" }
+
+startMenu and desktop each merge two directories (the per-user one and the
+all-users one) the way Explorer presents them, so Accessories appears once
+containing everything, not twice half-empty.
+
+Two limits keep a mistake from freezing the menu, since the popup cannot
+repaint while it is being filled:
+
+  - limit (200 per level): anything beyond it becomes a clickable
+    "More..." entry that opens the folder in Explorer, so the overflow is
+    a door rather than a dead end.
+  - A half-second deadline and a 2000-node ceiling per submenu opening.
+    This is what stops a folder pointing at a disconnected network share
+    from hanging the menu; you get the truncation entry instead.
+
+
+SHELL SUBMENUS
+------------------------------------------------------------------------------
+
+Four submenus list things that are not directories at all, so they cannot
+come from folder:
+
+    { "special": "allApps" }       every installed application, Store
+                                   apps included
+    { "special": "drives" }        the drive list, with volume labels
+    { "special": "controlPanel" }  the classic Control Panel applets
+    { "special": "allSettings" }   the modern Settings pages, in eight
+                                   groups
+
+Enumerating the app list takes 100-300 ms, and a menu cannot repaint while
+it is being filled, so the result is cached for five minutes. Reload
+config from the tray clears it (which is also the answer to "I just
+installed something and it is not in the list").
+
+
+POWER ACTIONS
+------------------------------------------------------------------------------
+
+Six of the specials are power actions:
+
+    { "special": "lock" }
+    { "special": "signOut" }
+    { "special": "sleep" }
+    { "special": "hibernate" }
+    { "special": "restart" }
+    { "special": "shutdown" }
+
+They require confirmation by default if they would close work:
+
+  signOut, restart, shutdown   needs confirmation: everything you have
+                               open gets closed
+  lock, sleep, hibernate       acts immediately: fully reversible, nothing
+                               is closed
+
+confirm overrides either direction:
+
+    { "special": "shutdown", "confirm": false }   no prompt, one click
+    { "special": "lock",     "confirm": true }    prompt even for this
+
+Power actions work as launchers too, so "Shut Down" can be a taskbar
+button:
+
+    { "launchers": [ { "id": "shutdown", "special": "shutdown" } ] }
 
 
 COMMAND LINE
@@ -272,6 +441,8 @@ COMMAND LINE
                                            menu tree, exit
     TaskbarMenu.exe --list-icons <file>    how many icons a file holds
     TaskbarMenu.exe --pick-icon  <file>    open the Windows icon picker
+    TaskbarMenu.exe --list-specials        list the built-in "special"
+                                           entry ids
     TaskbarMenu.exe --launch <id>          start one launcher entry (what a
                                            pinned shortcut runs)
     TaskbarMenu.exe --make-launcher <id> [--out <dir>]

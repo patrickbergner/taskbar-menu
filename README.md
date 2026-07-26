@@ -59,16 +59,23 @@ It is also exactly the config the screenshots on this page were taken with.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `label` | required | Display text. |
+| `label` | required¹ | Display text. |
 | `type` | `"item"` | `item` \| `separator`. Unknown values are skipped with a warning, never fatal. |
 | `exec` | – | An `.exe`, a document, a folder, a URL or a `.lnk`. |
 | `appId` | – | AppUserModelID of a Microsoft Store app. See [Microsoft Store apps](#microsoft-store-apps). Alternative to `exec`. |
+| `special` | – | A built-in Windows target named by a short id. See [Special entries](#special-entries). Alternative to `exec`. |
 | `args` | `[]` | Arguments as separate strings; quoting is handled for you. |
 | `icon` | auto | `.ico` path, or `file,index`. See [Icons](#icons). |
 | `cwd` | – | Working directory. |
 | `elevated` | `false` | Launch with the `runas` verb (UAC prompt). |
 | `show` | `"normal"` | `normal` \| `minimized` \| `maximized` \| `hidden`. |
+| `confirm` | depends | Only for a power action `special`. Ask before acting. See [Power actions](#power-actions). |
 | `items` | – | Turns the entry into a submenu, at any depth. `exec` is ignored when present. |
+| `folder` | – | Turns the entry into a submenu listing of a directory. See [Folder submenus](#folder-submenus). |
+| `depth` | `5` | How many directory levels a `folder` submenu descends (max 20). |
+| `limit` | `200` | Maximum entries shown per level of a `folder` submenu (max 2000). |
+
+¹ except for a separator, and for an entry with `special`, which brings its own label.
 
 `label`, `exec`, `icon`, `cwd` and each `args` element expand `%VAR%` environment references. An unset
 variable is left verbatim, so a typo shows up in the menu instead of silently vanishing.
@@ -186,7 +193,7 @@ A launcher entry takes the same launch fields as a menu entry (`exec` / `appId` 
 |---|---|---|
 | `id` | required | Stable key. `--launch <id>` resolves it and the generated shortcut's AppUserModelID is built from it. Also the `.lnk` file name. |
 | `label` | – | Display text for the shortcut; also accepted by `--launch` as a fallback key. |
-| `exec` / `appId` / `args` / `icon` / `cwd` / `elevated` / `show` | – | Same meaning as a menu entry. |
+| `exec` / `appId` / `special` / `args` / `icon` / `cwd` / `elevated` / `show` | – | Same meaning as a menu entry. |
 
 Generate the shortcuts and pin them:
 
@@ -214,6 +221,147 @@ multiple instances (each serving a different `--config`) stay tellable apart.
 With `theme` set to `auto` (the default), the menu follows the system light/dark setting and
 switches live, without a restart; `dark` and `light` force one.
 
+### Special entries
+
+There are special entries available for most of Windows' own tools like the device manager, task manager, Windows settings and so on:
+
+```json
+{ "special": "deviceManager" }
+{ "special": "taskManager" }
+{ "special": "windowsUpdate" }
+{ "special": "recycleBin" }
+```
+
+That is a *complete* entry. The label and the icon come from the catalog, so `special` is the only
+key required. Set `label` or `icon` yourself to override either:
+
+```json
+{ "special": "deviceManager", "label": "Geräte-Manager" }
+{ "special": "environmentVariables", "label": "Environment Variables (System)", "elevated": true }
+```
+
+`special` is a third way to name a target, alongside `exec` and `appId`; if more than one is set,
+`special` wins. It works in `launchers` too, so a system tool can be pinned to the taskbar:
+
+```json
+{ "launchers": [ { "id": "devicemanager", "special": "deviceManager" } ] }
+```
+
+![The collection of special menu items](screenshot-special.png)
+
+#### Catalog
+
+Print the catalog:
+
+```
+TaskbarMenu.exe --list-specials
+```
+
+| Group | IDs |
+|---|---|
+| Management | `deviceManager` `diskManagement` `computerManagement` `services` `taskScheduler` `eventViewer` `gpedit` `localUsers` `secpol` `firewall` `certificates` `perfmon` `resourceMonitor` `taskManager` `regedit` `msconfig` `systemInfo` `environmentVariables` `diskCleanup` `defrag` `mmc` |
+| Control Panel | `controlPanelHome` `systemProperties` `networkConnections` `programsAndFeatures` `displayControl` `mouse` `soundControl` `internetOptions` `dateTime` `securityMaintenance` `bluetoothControl` `userAccounts` |
+| Settings | `settings` `windowsUpdate` `installedApps` `displaySettings` `soundSettings` `bluetoothDevices` `networkSettings` `defaultApps` `powerSettings` `storage` `about` `printers` |
+| Places | `recycleBin` `thisPC` `userProfile` `networkFolder` `fonts` `startup` `sendTo` `temp` |
+| Folders | `startMenu` `windowsTools` `desktop` `documents` `downloads` `pictures` |
+| Shell | `allApps` `drives` `controlPanel` `allSettings` |
+| Power | `lock` `signOut` `sleep` `hibernate` `restart` `shutdown` |
+
+IDs are matched case-insensitively. An unknown id is skipped with a warning rather than failing the
+file, so a config written for a newer build still opens.
+
+Two things worth knowing:
+
+- **Not every tool exists on every edition.** `gpedit` and `secpol` are absent on Windows Home.
+  `--check` reports `[target not found]` for those; the entry still appears in the menu.
+- **Labels are English** regardless of the system language, because resolving the localised name
+  would cost a shell call per entry and make `--check` print differently on every machine. Set
+  `label` to translate one.
+
+### Folder submenus
+
+`folder` turns an entry into a submenu of a directory's contents:
+
+```json
+{ "label": "Repos", "folder": "C:\\Data", "depth": 2 }
+{ "folder": "%USERPROFILE%\\Downloads" }
+```
+
+The listing is read **when the submenu is opened**, not at startup, so it always shows what is there.
+
+The submenu leads with an **Open …** item and a separator, so the folder itself is still one click
+away. Directories come first, then files, each alphabetical. Hidden and system entries are
+skipped, as are junctions and symlinks.
+
+Six special entry catalog IDs are folder submenus over well-known locations:
+
+```json
+{ "special": "startMenu" }
+{ "special": "windowsTools" }
+{ "special": "desktop" }
+```
+
+`startMenu` and `desktop` each merge **two** directories (the per-user one and the all-users one)
+the way Explorer presents them, so `Accessories` appears once containing everything, not twice
+half-empty.
+
+Two limits keep a mistake from freezing the menu, since the popup cannot repaint while it is being
+filled:
+
+- `limit` (200 per level): anything beyond it becomes a clickable **More…** entry that opens the
+  folder in Explorer, so the overflow is a door rather than a dead end.
+- A half-second deadline and a 2000-node ceiling per submenu opening. This is what stops a `folder`
+  pointing at a disconnected network share from hanging the menu; you get the truncation entry
+  instead.
+
+### Shell submenus
+
+Four submenus list things that are not directories at all, so they cannot come from `folder`:
+
+```json
+{ "special": "allApps" }        // every installed application, Store apps included
+{ "special": "drives" }         // the drive list, with volume labels
+{ "special": "controlPanel" }   // the classic Control Panel applets
+{ "special": "allSettings" }    // the modern Settings pages, in eight groups
+```
+
+Enumerating the app list takes 100–300 ms, and a menu cannot repaint while it is being filled, so
+the result is cached for five minutes. *Reload config* from the tray clears it (which is also the
+answer to "I just installed something and it is not in the list").
+
+### Power actions
+
+Six of the specials are power actions:
+
+```json
+{ "special": "lock" }
+{ "special": "signOut" }
+{ "special": "sleep" }
+{ "special": "hibernate" }
+{ "special": "restart" }
+{ "special": "shutdown" }
+```
+
+They require confirmation by default if they would close work:
+
+| | Default |
+|---|---|
+| `signOut`, `restart`, `shutdown` | needs confirmation: everything you have open gets closed |
+| `lock`, `sleep`, `hibernate` | acts immediately: fully reversible, nothing is closed |
+
+`confirm` overrides either direction:
+
+```json
+{ "special": "shutdown", "confirm": false }   // no prompt, one click
+{ "special": "lock",     "confirm": true }    // prompt even for this
+```
+
+Power actions work as launchers too, so "Shut Down" can be a taskbar button:
+
+```json
+{ "launchers": [ { "id": "shutdown", "special": "shutdown" } ] }
+```
+
 ## Command line
 
 ```
@@ -223,6 +371,7 @@ TaskbarMenu.exe -c, --config <path>    use a different config file
 TaskbarMenu.exe --check                validate the config, print the menu tree, exit
 TaskbarMenu.exe --list-icons <file>    how many icons a file holds
 TaskbarMenu.exe --pick-icon  <file>    open the Windows icon picker
+TaskbarMenu.exe --list-specials        list the built-in "special" entry ids
 TaskbarMenu.exe --launch <id>          start one launcher entry (what a pinned shortcut runs)
 TaskbarMenu.exe --make-launcher <id> [--out <dir>]   write one pinnable .lnk
 TaskbarMenu.exe --make-launchers     [--out <dir>]   write a .lnk for every launcher
@@ -283,6 +432,10 @@ src/
   main.go                 startup, single instance, message loop, CLI
   win32.go                syscall bindings and struct layouts
   config.go               JSON model, validation, change detection
+  special.go              the "special" catalog of named Windows targets
+  power.go                lock / sign out / sleep / restart / shut down
+  dynamic.go              folder submenus enumerated when opened
+  shellenum.go            shell-namespace listing (all apps, drives, ...)
   menu.go                 node tree and HMENU construction
   place.go                monitor, DPI and taskbar-edge resolution
   draw.go                 owner-draw rendering, palette, fonts

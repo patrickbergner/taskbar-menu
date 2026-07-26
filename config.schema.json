@@ -52,6 +52,93 @@
         }
     },
     "definitions": {
+        "specialId": {
+            "type": "string",
+            "enum": [
+                "deviceManager",
+                "diskManagement",
+                "computerManagement",
+                "services",
+                "taskScheduler",
+                "eventViewer",
+                "gpedit",
+                "localUsers",
+                "secpol",
+                "firewall",
+                "certificates",
+                "perfmon",
+                "resourceMonitor",
+                "taskManager",
+                "regedit",
+                "msconfig",
+                "systemInfo",
+                "environmentVariables",
+                "diskCleanup",
+                "defrag",
+                "mmc",
+                "controlPanelHome",
+                "systemProperties",
+                "networkConnections",
+                "programsAndFeatures",
+                "displayControl",
+                "mouse",
+                "soundControl",
+                "internetOptions",
+                "dateTime",
+                "securityMaintenance",
+                "bluetoothControl",
+                "userAccounts",
+                "settings",
+                "windowsUpdate",
+                "installedApps",
+                "displaySettings",
+                "soundSettings",
+                "bluetoothDevices",
+                "networkSettings",
+                "defaultApps",
+                "powerSettings",
+                "storage",
+                "about",
+                "printers",
+                "recycleBin",
+                "thisPC",
+                "userProfile",
+                "networkFolder",
+                "fonts",
+                "startup",
+                "sendTo",
+                "temp",
+                "startMenu",
+                "windowsTools",
+                "desktop",
+                "documents",
+                "downloads",
+                "pictures",
+                "allApps",
+                "drives",
+                "controlPanel",
+                "allSettings",
+                "lock",
+                "signOut",
+                "sleep",
+                "hibernate",
+                "restart",
+                "shutdown",
+                "logoff",
+                "logout",
+                "signout",
+                "reboot",
+                "poweroff",
+                "lockworkstation",
+                "mycomputer",
+                "computer",
+                "env",
+                "environment",
+                "appsandfeatures",
+                "programs",
+                "homefolder"
+            ]
+        },
         "item": {
             "type": "object",
             "additionalProperties": false,
@@ -75,6 +162,10 @@
                 "appId": {
                     "type": "string",
                     "description": "AppUserModelID of a Microsoft Store (packaged) app, launched via shell:AppsFolder — for apps that have no .exe to point at. Find it with PowerShell's Get-StartApps (lists Name and AppID for every Start-menu app), or browse them in explorer shell:AppsFolder. Example: \"Microsoft.Windows.Photos_8wekyb3d8bbwe!App\". Mutually exclusive with exec (appId wins if both are set). The icon resolves automatically to the app's package logo; set icon only to override it."
+                },
+                "special": {
+                    "$ref": "#/definitions/specialId",
+                    "description": "A built-in Windows target named by a short id — Device Manager, Task Manager, Windows Update, the Recycle Bin and so on. A third way to name a target, alongside exec and appId (special wins if more than one is set). label and icon are supplied from the catalog, so { \"special\": \"taskManager\" } is a complete entry; set either to override. Run TaskbarMenu.exe --list-specials to print the catalog. Unknown ids are skipped with a warning rather than failing the file."
                 },
                 "args": {
                     "type": "array",
@@ -110,6 +201,28 @@
                     "type": "string",
                     "description": "Reserved; native popup menus have no tooltips yet."
                 },
+                "confirm": {
+                    "type": "boolean",
+                    "description": "Only meaningful on a power special (lock, signOut, sleep, hibernate, restart, shutdown). Defaults to true for the actions that close your applications — signOut, restart and shutdown — and to false for the reversible ones. Set false to act immediately on a single click, or true to make even locking ask."
+                },
+                "folder": {
+                    "type": "string",
+                    "description": "Turns the entry into a submenu listing this directory's contents, read when the submenu is opened rather than at startup — so it always shows what is there now. Supports %VAR%. The submenu leads with an \"Open <label>\" item. Mutually exclusive with exec, appId, special and items."
+                },
+                "depth": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 20,
+                    "default": 5,
+                    "description": "How many directory levels a folder submenu descends. 1 lists the folder and opens subfolders in Explorer; 2 and above turn subfolders into submenus of their own, each read only when opened. Values above 20 are clamped with a warning."
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2000,
+                    "default": 200,
+                    "description": "Maximum entries shown per level of a folder submenu. Anything beyond it is replaced by a clickable \"More…\" entry that opens the folder in Explorer. Values above 2000 are clamped with a warning."
+                },
                 "items": {
                     "type": "array",
                     "items": {
@@ -142,6 +255,10 @@
                     "type": "string",
                     "description": "AppUserModelID of a Microsoft Store (packaged) app, launched via shell:AppsFolder. Mutually exclusive with exec (appId wins if both are set)."
                 },
+                "special": {
+                    "$ref": "#/definitions/specialId",
+                    "description": "A built-in Windows target named by a short id, as for a menu entry — so a launcher can pin e.g. Device Manager to the taskbar. label and icon are supplied from the catalog. Run TaskbarMenu.exe --list-specials to print it. Mutually exclusive with exec and appId (special wins)."
+                },
                 "args": {
                     "type": "array",
                     "items": {
@@ -171,6 +288,10 @@
                     ],
                     "default": "normal",
                     "description": "Initial window state of the launched target."
+                },
+                "confirm": {
+                    "type": "boolean",
+                    "description": "Only meaningful on a power special. Same defaults as a menu entry: true for signOut, restart and shutdown, false for lock, sleep and hibernate."
                 }
             }
         }

@@ -3,8 +3,143 @@
     "trayIcon": true,
     "iconSize": 16,
     "theme": "auto",
-    "anchor": "taskbar",
+    "anchor": "cursor",
     "items": [
+        {
+            "label": "Special Items",
+            "items": [
+                {
+                    "label": "Management",
+                    "items": [
+                        { "special": "deviceManager" },
+                        { "special": "diskManagement" },
+                        { "special": "computerManagement" },
+                        { "special": "services" },
+                        { "special": "taskScheduler" },
+                        { "special": "eventViewer" },
+                        { "special": "gpedit" },
+                        { "special": "localUsers" },
+                        { "special": "secpol" },
+                        { "special": "firewall" },
+                        { "special": "certificates" },
+                        { "special": "perfmon" },
+                        { "special": "resourceMonitor" },
+                        { "special": "taskManager" },
+                        { "special": "regedit" },
+                        { "special": "msconfig" },
+                        { "special": "systemInfo" },
+                        {
+                            "special": "environmentVariables",
+                            "label": "Environment Variables (System)",
+                            "elevated": true
+                        },
+                        { "special": "diskCleanup" },
+                        { "special": "defrag" },
+                        { "special": "mmc" }
+                    ]
+                },
+                {
+                    "label": "Control Panel",
+                    "items": [
+                        { "special": "controlPanelHome" },
+                        { "special": "systemProperties" },
+                        { "special": "networkConnections" },
+                        { "special": "programsAndFeatures" },
+                        { "special": "displayControl" },
+                        { "special": "mouse" },
+                        { "special": "soundControl" },
+                        { "special": "internetOptions" },
+                        { "special": "dateTime" },
+                        { "special": "securityMaintenance" },
+                        { "special": "bluetoothControl" },
+                        { "special": "userAccounts" }
+                    ]
+                },
+                {
+                    "label": "Settings",
+                    "items": [
+                        { "special": "settings" },
+                        { "special": "windowsUpdate" },
+                        { "special": "installedApps" },
+                        { "special": "displaySettings" },
+                        { "special": "soundSettings" },
+                        { "special": "bluetoothDevices" },
+                        { "special": "networkSettings" },
+                        { "special": "defaultApps" },
+                        { "special": "powerSettings" },
+                        { "special": "storage" },
+                        { "special": "about" },
+                        { "special": "printers" }
+                    ]
+                },
+                {
+                    "label": "Places",
+                    "items": [
+                        { "special": "recycleBin" },
+                        { "special": "thisPC" },
+                        { "special": "userProfile" },
+                        { "special": "networkFolder" },
+                        { "special": "fonts" },
+                        { "special": "startup" },
+                        { "special": "sendTo" },
+                        { "special": "temp" }
+                    ]
+                },
+                {
+                    "label": "Folders",
+                    "items": [
+                        { "special": "startMenu" },
+                        { "special": "windowsTools" },
+                        { "special": "desktop" },
+                        { "special": "documents" },
+                        { "special": "downloads" },
+                        { "special": "pictures" }
+                    ]
+                },
+                {
+                    "label": "Shell",
+                    "items": [
+                        { "special": "allApps" },
+                        { "special": "drives" },
+                        { "special": "controlPanel" },
+                        { "special": "allSettings" }
+                    ]
+                },
+                {
+                    "type": "separator"
+                },
+                {
+                    "label": "Power",
+                    "icon": "C:\\Windows\\System32\\shell32.dll,27",
+                    "items": [
+                        { "special": "lock" },
+                        { "special": "signOut" },
+                        { "special": "sleep" },
+                        { "special": "hibernate" },
+                        {
+                            "type": "separator"
+                        },
+                        { "special": "restart" },
+                        {
+                            "label": "Force Shutdown",
+                            "special": "shutdown",
+                            "confirm": false
+                        }
+                    ]
+                },
+                {
+                    "type": "separator"
+                },
+                {
+                    "label": "Wallpaper",
+                    "folder": "C:\\Windows\\Web",
+                    "depth": 2
+                }
+            ]
+        },
+        {
+            "type": "separator"
+        },
         {
             "label": "Plain application",
             "exec": "C:\\Program Files\\Mozilla Firefox\\firefox.exe"
@@ -118,6 +253,10 @@
             "id": "downloads",
             "exec": "%USERPROFILE%\\Downloads",
             "icon": "C:\\Windows\\System32\\shell32.dll,-16"
+        },
+        {
+            "id": "devicemanager",
+            "special": "deviceManager"
         }
     ]
 }

@@ -42,6 +42,20 @@ func isAppsFolder(s string) bool {
 	return strings.HasPrefix(strings.ToLower(s), strings.ToLower(appsFolderPrefix))
 }
 
+// isShellMoniker reports whether s names something in the shell namespace rather
+// than a file: a "shell:" moniker or a "::{CLSID}" path. Neither holds an icon
+// resource to extract, and both are exactly what SHCreateItemFromParsingName
+// takes -- so the image factory is the only route to their icon, and also the
+// better one, because it yields the Recycle Bin's *current* full-or-empty icon
+// rather than a frame frozen at config-load time.
+//
+// isAppsFolder stays separate: "is this a Store app" is a different question,
+// asked by launch.go and shortcut.go for different reasons.
+func isShellMoniker(s string) bool {
+	l := strings.ToLower(strings.TrimSpace(s))
+	return strings.HasPrefix(l, "shell:") || strings.HasPrefix(l, "::{")
+}
+
 // urlScheme returns the scheme of a URL-ish string, or "" for a filesystem
 // path. A drive letter ("C:\...") is deliberately not a scheme, hence the
 // requirement that the scheme be longer than one character.
@@ -66,6 +80,24 @@ var iconContainers = map[string]bool{
 	".cpl": true, ".ocx": true, ".scr": true, ".drv": true,
 }
 
+// isLinkFile reports whether s is a shell shortcut: the opposite of an icon
+// container, a file that names an icon instead of holding one.
+//
+// .url is not one of these. An Internet shortcut cannot be read through
+// IShellLink, and it does not need to be -- its registered association already
+// resolves to the browser or to url.dll, which is what Explorer shows for it.
+func isLinkFile(s string) bool {
+	return strings.EqualFold(filepath.Ext(s), ".lnk")
+}
+
+// maxLinkHops bounds a chain of shortcuts pointing at shortcuts.
+//
+// The shell will not produce such a chain -- it collapses one as it writes it,
+// storing the eventual target rather than the intermediate link. This is for the
+// .lnk the shell did not write, where the bound is what turns a cycle into a
+// generic icon instead of a hang.
+const maxLinkHops = 4
+
 // resolveIconSource decides which file and index hold an entry's icon.
 //
 // An explicit spec always wins. Otherwise the order matters, because the two
@@ -79,7 +111,37 @@ var iconContainers = map[string]bool{
 //     imageres.dll,-102 -- but it knows nothing about a specific file.
 //
 // So: self-contained types first, then the shell, then the type association.
+// iconSourceCache memoizes the shell and association lookups below, which are
+// the only expensive part of building a menu -- SHGetFileInfoW and
+// AssocQueryStringW cost hundreds of microseconds each. That did not matter
+// while the menu was built once per config change, but a config with dynamic
+// submenus rebuilds on every show, where sixty entries would be the difference
+// between 20us and 20ms. Cleared with the icons themselves on reload.
+var iconSourceCache = map[[2]string]iconSource{}
+
+// iconSourceCacheMax bounds it separately from iconCache. With lazy icons the
+// two grow at very different rates: iconCache only gains an entry when an item
+// is actually painted, while this one gains an entry for every path enumerated,
+// painted or not. Browsing a deep tree over a long session would otherwise
+// accumulate tens of thousands of full paths that will never be looked up again.
+const iconSourceCacheMax = 4096
+
+type iconSource struct {
+	file string
+	idx  int32
+}
+
 func resolveIconSource(exec, iconSpec string) (string, int32) {
+	key := [2]string{exec, iconSpec}
+	if s, ok := iconSourceCache[key]; ok {
+		return s.file, s.idx
+	}
+	file, idx := resolveIconSourceUncached(exec, iconSpec)
+	iconSourceCache[key] = iconSource{file: file, idx: idx}
+	return file, idx
+}
+
+func resolveIconSourceUncached(exec, iconSpec string) (string, int32) {
 	if iconSpec != "" {
 		return parseIconSpec(iconSpec)
 	}
@@ -87,10 +149,12 @@ func resolveIconSource(exec, iconSpec string) (string, int32) {
 		return "", 0
 	}
 
-	// A Store app's moniker is kept verbatim as the icon source; iconFor routes
-	// it to the shell image factory. It must be caught before urlScheme, which
-	// would otherwise see "shell:" as a scheme and try a type association.
-	if isAppsFolder(exec) {
+	// A shell moniker is kept verbatim as the icon source; iconFor routes it to
+	// the shell image factory. It must be caught before urlScheme, which would
+	// otherwise see "shell:" as a scheme and try a type association -- and find
+	// one, since ms-settings: and friends do register a DefaultIcon that points
+	// at a package resource the extractor cannot read.
+	if isShellMoniker(exec) {
 		return exec, 0
 	}
 
@@ -102,6 +166,28 @@ func resolveIconSource(exec, iconSpec string) (string, int32) {
 			return exe, 0
 		}
 		return "", 0
+	}
+
+	// A shortcut names an icon rather than holding one, so it is followed to
+	// whatever does hold it before anything below gets a look -- the target may
+	// itself be an icon container, a folder or a document, and each of those is
+	// already handled. Walked as a loop rather than by recursing because a link
+	// may point at another link, and a cycle of them must not be a hang.
+	for i := 0; isLinkFile(exec) && i < maxLinkHops; i++ {
+		icon, idx, target := linkIconSource(exec)
+		if icon != "" {
+			return icon, idx
+		}
+		if target == "" || samePath(target, exec) {
+			break
+		}
+		exec = target
+	}
+	// Still a shortcut: nothing extractable behind it, which is what a link onto
+	// a Store app looks like. iconFor sends it to the shell image factory, so it
+	// draws the package logo Explorer draws rather than the generic icon.
+	if isLinkFile(exec) {
+		return exec, 0
 	}
 
 	if iconContainers[strings.ToLower(filepath.Ext(exec))] {
@@ -149,7 +235,10 @@ func iconFor(file string, idx, size int32) syscall.Handle {
 
 	var h syscall.Handle
 	switch {
-	case isAppsFolder(file):
+	// A shortcut only reaches here when resolveIconSource found nothing
+	// extractable behind it, which is the same position a shell moniker is in:
+	// the image factory is the only route to the icon, and it is the right one.
+	case isShellMoniker(file), isLinkFile(file):
 		h = shellImageIcon(file, size)
 	case isImageFile(file):
 		h = imageIcon(file, size) // SVG/PNG/AVIF/... rendered through the imaging stack
@@ -157,6 +246,15 @@ func iconFor(file string, idx, size int32) syscall.Handle {
 		h = extractIcon(file, idx, size)
 		if h == 0 && idx != 0 {
 			h = extractIcon(file, 0, size) // requested index missing -- fall back to the first
+		}
+		if h == 0 {
+			// Nothing embedded, but the shell still knows what Explorer draws for
+			// it. That is the difference between an icon and the generic square
+			// for the two kinds of file that reach here: one that holds no icon
+			// resources despite its extension promising some -- a .msc, or an
+			// .exe like Ollama's that ships without any -- and a document whose
+			// association gave nothing.
+			h = shellImageIcon(file, size)
 		}
 	}
 	if h == 0 {
@@ -186,6 +284,19 @@ func purgeIcons() {
 		}
 		delete(iconCache, k)
 	}
+	clear(iconSourceCache)
+}
+
+// purgeCaches additionally drops what is merely expensive rather than scarce.
+// Separate from purgeIcons because the two have different triggers: GDI handle
+// pressure wants the icons gone and has no reason to throw away a shell listing
+// that costs 100-300ms to rebuild, whereas a config reload wants everything
+// re-read -- which is also what makes "Reload config" the answer to "I just
+// installed something and it is not in the list".
+func purgeCaches() {
+	purgeIcons()
+	purgeShellListings()
+	purgeLocalizedNames()
 }
 
 // ---------------------------------------------------------------------------

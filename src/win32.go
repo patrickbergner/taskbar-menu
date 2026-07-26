@@ -40,6 +40,8 @@ var (
 	shcore   = sysDLL("shcore.dll")
 	shlwapi  = sysDLL("shlwapi.dll")
 	ole32    = sysDLL("ole32.dll")
+	advapi32 = sysDLL("advapi32.dll")
+	powrprof = sysDLL("powrprof.dll")
 
 	// Imaging: WIC decodes raster formats (PNG/JPEG/GIF/BMP/TIFF, and
 	// AVIF/HEIC/WebP where the OS codec is installed); Direct2D rasterizes SVG.
@@ -74,6 +76,7 @@ var (
 	procCreatePopupMenu               = user32.NewProc("CreatePopupMenu")
 	procDestroyMenu                   = user32.NewProc("DestroyMenu")
 	procInsertMenuItemW               = user32.NewProc("InsertMenuItemW")
+	procDeleteMenu                    = user32.NewProc("DeleteMenu")
 	procSetMenuInfo                   = user32.NewProc("SetMenuInfo")
 	procTrackPopupMenuEx              = user32.NewProc("TrackPopupMenuEx")
 	procMonitorFromPoint              = user32.NewProc("MonitorFromPoint")
@@ -88,6 +91,8 @@ var (
 	procGetSystemMetricsForDpi        = user32.NewProc("GetSystemMetricsForDpi")
 	procFillRect                      = user32.NewProc("FillRect")
 	procMessageBoxW                   = user32.NewProc("MessageBoxW")
+	procExitWindowsEx                 = user32.NewProc("ExitWindowsEx")
+	procLockWorkStation               = user32.NewProc("LockWorkStation")
 	procSetWindowsHookExW             = user32.NewProc("SetWindowsHookExW")
 	procUnhookWindowsHookEx           = user32.NewProc("UnhookWindowsHookEx")
 	procCallNextHookEx                = user32.NewProc("CallNextHookEx")
@@ -124,6 +129,12 @@ var (
 	procExtractIconExW              = shell32.NewProc("ExtractIconExW")
 	procPickIconDlg                 = shell32.NewProc("PickIconDlg")
 	procSHCreateItemFromParsingName = shell32.NewProc("SHCreateItemFromParsingName")
+	procSHGetLocalizedName          = shell32.NewProc("SHGetLocalizedName")
+
+	// A string resource, read out of a module mapped for its resources alone;
+	// see localizedName in shellenum.go.
+	procLoadLibraryExW = kernel32.NewProc("LoadLibraryExW")
+	procLoadStringW    = user32.NewProc("LoadStringW")
 
 	procCreateIconIndirect = user32.NewProc("CreateIconIndirect")
 	procCreateBitmap       = gdi32.NewProc("CreateBitmap")
@@ -137,7 +148,16 @@ var (
 
 	procCoInitializeEx    = ole32.NewProc("CoInitializeEx")
 	procCoCreateInstance  = ole32.NewProc("CoCreateInstance")
+	procCoTaskMemFree     = ole32.NewProc("CoTaskMemFree")
 	procD2D1CreateFactory = d2d1.NewProc("D2D1CreateFactory")
+
+	// Shutting the machine down needs SeShutdownPrivilege turned on in this
+	// process's token first; see enablePrivilege in power.go.
+	procOpenProcessToken      = advapi32.NewProc("OpenProcessToken")
+	procLookupPrivilegeValueW = advapi32.NewProc("LookupPrivilegeValueW")
+	procAdjustTokenPrivileges = advapi32.NewProc("AdjustTokenPrivileges")
+	procGetCurrentProcess     = kernel32.NewProc("GetCurrentProcess")
+	procSetSuspendState       = powrprof.NewProc("SetSuspendState")
 )
 
 // ---------------------------------------------------------------------------
@@ -155,6 +175,7 @@ const (
 	wmCommand       = 0x0111
 	wmMeasureItem   = 0x002C
 	wmDrawItem      = 0x002B
+	wmInitMenuPopup = 0x0117
 	wmSettingChange = 0x001A
 	wmNull          = 0x0000
 	wmApp           = 0x8000
@@ -178,10 +199,17 @@ const (
 
 	mftString    = 0x00000000
 	mftOwnerDraw = 0x00000100
+	// mftMenuBreak starts a new column at this item. MFT_MENUBARBREAK (0x20)
+	// does the same and draws a divider between the columns, but paints it in
+	// hardcoded classic system colours -- the same problem the flyout arrows
+	// have (see border.go), so the plain break is the only usable one here.
+	mftMenuBreak = 0x00000040
 
 	mfsEnabled  = 0x00000000
 	mfsDisabled = 0x00000003
 	mfsHilite   = 0x00000080
+
+	mfByPosition = 0x00000400
 
 	mimBackground      = 0x00000002
 	mimApplyToSubMenus = 0x80000000
@@ -245,6 +273,11 @@ const (
 	niifError   = 0x00000003
 
 	smCXSmIcon = 49
+	// smCXMenuCheck is the check-mark gutter Windows reserves on every menu
+	// item, owner-draw or not, on top of the width WM_MEASUREITEM asked for.
+	// Column layout has to add it back to know how wide a column really is; see
+	// splitColumns in menu.go.
+	smCXMenuCheck = 71
 
 	// GDI.
 	transparent   = 1
@@ -282,7 +315,30 @@ const (
 
 	mbIconError       = 0x00000010
 	mbIconInformation = 0x00000040
+	mbIconWarning     = 0x00000030
 	mbOK              = 0x00000000
+	mbYesNo           = 0x00000004
+	mbDefButton2      = 0x00000100
+	mbSetForeground   = 0x00010000
+	mbTopMost         = 0x00040000
+
+	idYes = 6
+
+	// Token and privilege plumbing for ExitWindowsEx / SetSuspendState.
+	tokenAdjustPrivileges = 0x0020
+	tokenQuery            = 0x0008
+	sePrivilegeEnabled    = 0x00000002
+	errorNotAllAssigned   = syscall.Errno(1300)
+	seShutdownName        = "SeShutdownPrivilege"
+
+	ewxLogoff      = 0x00000000
+	ewxShutdown    = 0x00000001
+	ewxReboot      = 0x00000002
+	ewxForceIfHung = 0x00000010
+
+	// SHTDN_REASON_MAJOR_OTHER | SHTDN_REASON_MINOR_OTHER | FLAG_PLANNED.
+	// Without a reason code the event log records an unplanned shutdown.
+	shtdnReasonPlanned = 0x80000000
 
 	attachParentProcess = ^uintptr(0)  // DWORD -1
 	stdOutputHandle     = ^uintptr(10) // DWORD -11
@@ -306,6 +362,23 @@ type GUID struct { // 16
 	Data2 uint16
 	Data3 uint16
 	Data4 [8]byte
+}
+
+type LUID struct { // 8
+	LowPart  uint32
+	HighPart int32
+}
+
+type LUID_AND_ATTRIBUTES struct { // 12
+	Luid       LUID
+	Attributes uint32
+}
+
+// TOKEN_PRIVILEGES is variable-length in C; one entry is all enablePrivilege
+// ever asks for, and AdjustTokenPrivileges reads only PrivilegeCount of them.
+type TOKEN_PRIVILEGES struct { // 16
+	PrivilegeCount uint32
+	Privileges     [1]LUID_AND_ATTRIBUTES
 }
 
 type MSG struct { // 48
@@ -681,6 +754,15 @@ func destroyMenu(h syscall.Handle) {
 
 func insertMenuItem(menu syscall.Handle, pos uint32, mii *MENUITEMINFOW) bool {
 	r, _, _ := procInsertMenuItemW.Call(uintptr(menu), uintptr(pos), 1, uintptr(unsafe.Pointer(mii)))
+	return r != 0
+}
+
+// deleteMenu removes an item by position. DeleteMenu rather than RemoveMenu on
+// purpose: DeleteMenu destroys an attached submenu's HMENU along with the item,
+// which is what keeps repopulating a dynamic submenu from leaking the menu
+// handles of the level below it.
+func deleteMenu(menu syscall.Handle, pos uint32) bool {
+	r, _, _ := procDeleteMenu.Call(uintptr(menu), uintptr(pos), mfByPosition)
 	return r != 0
 }
 
@@ -1128,6 +1210,14 @@ func assocDefaultIcon(assoc string) (string, int32, bool) {
 	if file == "" {
 		return "", 0, false
 	}
+	// "%1" is the association saying "the icon is in the file itself", which is
+	// no answer at all for the types that register it -- a .msc holds no icon
+	// resources, which is the whole reason special.go carries a hand-picked spec
+	// for every Management Console entry. Reported as an absence so the caller
+	// goes on looking rather than trying to extract from a literal "%1".
+	if file == "%1" {
+		return "", 0, false
+	}
 	return file, idx, true
 }
 
@@ -1146,10 +1236,20 @@ func searchPath(name string) string {
 }
 
 func messageBox(title, text string, flags uint32) {
+	messageBoxEx(0, title, text, flags)
+}
+
+// messageBoxEx is messageBox with an owner window and the button the user chose.
+// The owner matters for the power-action confirmation: without one the dialog
+// can end up behind whatever had focus, which for a question about shutting the
+// machine down is the worst possible place for it.
+func messageBoxEx(owner syscall.Handle, title, text string, flags uint32) int32 {
 	tp, xp := utf16Ptr(title), utf16Ptr(text)
-	procMessageBoxW.Call(0, uintptr(unsafe.Pointer(xp)), uintptr(unsafe.Pointer(tp)), uintptr(flags))
+	r, _, _ := procMessageBoxW.Call(uintptr(owner),
+		uintptr(unsafe.Pointer(xp)), uintptr(unsafe.Pointer(tp)), uintptr(flags))
 	runtime.KeepAlive(tp)
 	runtime.KeepAlive(xp)
+	return int32(r)
 }
 
 // attachParentConsole reconnects stdout to the launching console. The exe is

@@ -77,7 +77,7 @@ func launch(n *node) error {
 // launch-relevant fields matter here -- no icon extraction or command id, since
 // nothing is drawn.
 func launcherNode(l Launcher) *node {
-	return &node{
+	n := &node{
 		exec:     l.Exec,
 		appID:    l.AppID,
 		args:     l.Args,
@@ -85,6 +85,14 @@ func launcherNode(l Launcher) *node {
 		elevated: l.Elevated,
 		show:     l.showCmd(),
 	}
+	// A power launcher has no target to hand ShellExecuteEx; it carries the
+	// built-in instead, which runLaunch calls directly. app is the zero
+	// appState here -- that is correct, since the shim has no window to own the
+	// confirmation dialog.
+	if l.Special != "" {
+		n.action = app.powerAction(l.Special, l.confirms())
+	}
+	return n
 }
 
 // runLaunch is the --launch shim. It loads the config, resolves the launcher by
@@ -107,7 +115,15 @@ func runLaunch(opts options) int {
 		logf("launch: no launcher %q", opts.launch)
 		return 1
 	}
-	if err := launch(launcherNode(l)); err != nil {
+	n := launcherNode(l)
+	// A built-in never reaches ShellExecuteEx. It may still put a confirmation
+	// dialog on screen, which is fine from this windowless shim: it is a plain
+	// modal with no owner, and no menu is up to fight it for the input queue.
+	if n.action != nil {
+		n.action()
+		return 0
+	}
+	if err := launch(n); err != nil {
 		logf("launch %q: %v", opts.launch, err)
 		return 1
 	}

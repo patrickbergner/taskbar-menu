@@ -113,7 +113,7 @@ func paintSubmenuArrows(hwnd syscall.Handle) {
 			continue
 		}
 		n := a.nodeFromData(mii.ItemData)
-		if n == nil || len(n.children) == 0 {
+		if n == nil || !n.hasSubmenu() {
 			continue
 		}
 

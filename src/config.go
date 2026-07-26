@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf16"
@@ -18,6 +19,11 @@ type Config struct {
 	Anchor    string     `json:"anchor"` // taskbar | cursor
 	Items     []Item     `json:"items"`
 	Launchers []Launcher `json:"launchers"`
+
+	// HasDynamic is set during normalisation when any entry enumerates itself
+	// when opened. It is what lets a config without such entries keep the
+	// build-once-and-cache fast path untouched.
+	HasDynamic bool `json:"-"`
 
 	// Warnings collected while normalising: bad enum values, items that carry
 	// neither exec nor children, unknown types. Surfaced in the tray tooltip
@@ -35,12 +41,14 @@ type Launcher struct {
 	Id       string   `json:"id"`
 	Label    string   `json:"label"`
 	Exec     string   `json:"exec"`
-	AppID    string   `json:"appId"` // AppUserModelID of a Microsoft Store app
+	AppID    string   `json:"appId"`   // AppUserModelID of a Microsoft Store app
+	Special  string   `json:"special"` // catalog id; see special.go
 	Args     []string `json:"args"`
 	Icon     string   `json:"icon"`
 	Cwd      string   `json:"cwd"`
 	Elevated bool     `json:"elevated"`
-	Show     string   `json:"show"` // normal | minimized | maximized | hidden
+	Show     string   `json:"show"`    // normal | minimized | maximized | hidden
+	Confirm  *bool    `json:"confirm"` // power actions only; see Item.Confirm
 }
 
 // Item is one menu entry. An entry with Items is a submenu and ignores Exec.
@@ -48,7 +56,11 @@ type Item struct {
 	Label    string   `json:"label"`
 	Type     string   `json:"type"` // item | separator
 	Exec     string   `json:"exec"`
-	AppID    string   `json:"appId"` // AppUserModelID of a Microsoft Store app
+	AppID    string   `json:"appId"`   // AppUserModelID of a Microsoft Store app
+	Special  string   `json:"special"` // catalog id; see special.go
+	Folder   string   `json:"folder"`  // directory enumerated live into a submenu
+	Depth    int      `json:"depth"`   // folder recursion, 1..20
+	Limit    int      `json:"limit"`   // max entries per level
 	Args     []string `json:"args"`
 	Icon     string   `json:"icon"`
 	Cwd      string   `json:"cwd"`
@@ -56,6 +68,12 @@ type Item struct {
 	Show     string   `json:"show"` // normal | minimized | maximized | hidden
 	Tooltip  string   `json:"tooltip"`
 	Items    []Item   `json:"items"`
+
+	// Confirm gates a power action behind a yes/no dialog. A *bool for the same
+	// reason TrayIcon is one: the default is true for the destructive actions
+	// and false for the reversible ones, so "not set" has to be distinguishable
+	// from an explicit false.
+	Confirm *bool `json:"confirm"`
 }
 
 // Show state constants, mirroring the SW_* values so they can be handed
@@ -200,6 +218,7 @@ func (c *Config) normLaunchers() {
 		l.Label = expandEnv(l.Label)
 		l.Exec = expandEnv(l.Exec)
 		l.AppID = strings.TrimSpace(l.AppID)
+		l.Special = strings.TrimSpace(l.Special)
 		l.Icon = expandEnv(l.Icon)
 		l.Cwd = expandEnv(l.Cwd)
 		for j := range l.Args {
@@ -211,14 +230,60 @@ func (c *Config) normLaunchers() {
 			continue
 		}
 
+		// A launcher resolves a special exactly as a menu item does; the id stays
+		// the launcher's own, since that is what --launch and the pinned
+		// shortcut's AppUserModelID are keyed on.
+		if l.Special != "" {
+			e, ok := lookupSpecial(l.Special)
+			if !ok {
+				c.warn("%s (%q): unknown special %q, skipped", where, l.Id, l.Special)
+				continue
+			}
+			if l.Exec != "" || l.AppID != "" {
+				c.warn("%s (%q): both special and exec/appId given, using special", where, l.Id)
+				l.Exec, l.AppID = "", ""
+			}
+			if l.Label == "" {
+				l.Label = e.label
+			}
+			exec, args, icon := e.resolved()
+			if l.Icon == "" {
+				l.Icon = icon
+			}
+			switch e.kind {
+			case kindExec:
+				l.Exec = exec
+				if len(l.Args) == 0 {
+					l.Args = args
+				}
+				l.Special = ""
+			case kindAction:
+				l.Special = e.id
+				if l.Confirm == nil {
+					d := confirmDefault(e.id)
+					l.Confirm = &d
+				}
+			case kindDyn:
+				// A launcher is a flat target by definition; there is nowhere for
+				// a submenu to open from a taskbar button.
+				c.warn("%s (%q): special %q is a submenu and cannot be a launcher, skipped",
+					where, l.Id, e.id)
+				continue
+			default:
+				c.warn("%s (%q): special %q is not available in this build, skipped",
+					where, l.Id, e.id)
+				continue
+			}
+		}
+
 		// exec and appId are two ways to name the same target; appId wins, exactly
 		// as it does for a menu Item.
 		if l.AppID != "" && l.Exec != "" {
 			c.warn("%s (%q): both exec and appId given, using appId", where, l.Id)
 			l.Exec = ""
 		}
-		if l.Exec == "" && l.AppID == "" {
-			c.warn("%s (%q): no exec or appId, skipped", where, l.Id)
+		if l.Exec == "" && l.AppID == "" && l.Special == "" {
+			c.warn("%s (%q): no exec, appId or special, skipped", where, l.Id)
 			continue
 		}
 
@@ -296,10 +361,112 @@ func (c *Config) normItems(items []Item, path string) []Item {
 		it.Label = expandEnv(it.Label)
 		it.Exec = expandEnv(it.Exec)
 		it.AppID = strings.TrimSpace(it.AppID)
+		it.Special = strings.TrimSpace(it.Special)
+		it.Folder = expandEnv(it.Folder)
 		it.Icon = expandEnv(it.Icon)
 		it.Cwd = expandEnv(it.Cwd)
 		for j := range it.Args {
 			it.Args[j] = expandEnv(it.Args[j])
+		}
+
+		// A special is resolved before the label check, because supplying the
+		// label is half of what the catalog is for -- {"special": "taskManager"}
+		// with no label at all is the shortest useful entry there is.
+		if it.Special != "" && len(it.Items) > 0 {
+			// Named without a label here on purpose: the catalog label is not
+			// applied when the special is discarded, so there is nothing to quote.
+			c.warn("%s: items given with special %q, ignoring special", where, it.Special)
+			it.Special = ""
+		}
+		if it.Special != "" {
+			e, ok := lookupSpecial(it.Special)
+			if !ok {
+				// Same forward-compatibility policy as an unknown type: a config
+				// written for a later build still opens, minus the entry it names.
+				c.warn("%s: unknown special %q, skipped", where, it.Special)
+				continue
+			}
+			if it.Label == "" {
+				it.Label = e.label
+			}
+			exec, args, icon := e.resolved()
+			if it.Icon == "" {
+				it.Icon = icon
+			}
+			if it.Exec != "" || it.AppID != "" {
+				c.warn("%s (%q): both special and exec/appId given, using special", where, it.Label)
+				it.Exec, it.AppID = "", ""
+			}
+			switch e.kind {
+			case kindExec:
+				it.Exec = exec
+				if len(it.Args) == 0 {
+					it.Args = args
+				}
+				// Fully desugared: nothing downstream needs to know this entry
+				// began life as a special, which is why the catalog costs
+				// buildNodes, launch and --check no changes at all.
+				it.Special = ""
+			case kindAction:
+				// Survives normalisation as a live special: there is no exec to
+				// desugar into, so buildNodes attaches the built-in instead.
+				it.Special = e.id
+				if it.Confirm == nil {
+					d := confirmDefault(e.id)
+					it.Confirm = &d
+				}
+			case kindDyn:
+				it.Special = e.id
+				c.HasDynamic = true
+			default:
+				c.warn("%s (%q): special %q is not available in this build, skipped",
+					where, it.Label, e.id)
+				continue
+			}
+		}
+
+		// folder turns the entry into a submenu enumerated when it is opened.
+		// items wins over it for the same reason it wins over special: an
+		// explicit list is never something to second-guess.
+		if it.Folder != "" && len(it.Items) > 0 {
+			c.warn("%s: items given with folder, ignoring folder", where)
+			it.Folder = ""
+		}
+		if it.Folder != "" && it.Special != "" {
+			c.warn("%s: special given with folder, ignoring folder", where)
+			it.Folder = ""
+		}
+		if it.Folder != "" {
+			if it.Label == "" {
+				it.Label = filepath.Base(strings.TrimRight(it.Folder, `\/`))
+			}
+			c.HasDynamic = true
+		}
+
+		// This file warns about every key that will be ignored, so these have to
+		// as well -- and the test is what the key actually applies to, not
+		// merely that some special is present. depth and limit belong to a
+		// directory listing, confirm to a power action; asking for either on the
+		// wrong kind of entry is a silent no-op otherwise.
+		//
+		// The values themselves are deliberately left unclamped here: the clamp
+		// lives in dynSourceFor, which is the only thing that reads them, and
+		// having it in one place means a changed default cannot disagree with
+		// itself. A plain exec entry keeps depth 0 rather than a meaningless 1.
+		if it.Depth != 0 || it.Limit != 0 {
+			if !it.listsADirectory() {
+				c.warn("%s (%q): depth/limit only apply to a folder submenu", where, it.Label)
+			}
+			if it.Depth > maxDepth {
+				c.warn("%s (%q): depth %d exceeds the maximum of %d", where, it.Label, it.Depth, maxDepth)
+			}
+			if it.Limit > maxLimit {
+				c.warn("%s (%q): limit %d exceeds the maximum of %d", where, it.Label, it.Limit, maxLimit)
+			}
+		}
+
+		if it.Confirm != nil && !it.isPowerAction() {
+			c.warn("%s (%q): confirm only applies to a power action", where, it.Label)
 		}
 
 		if it.Label == "" {
@@ -326,8 +493,10 @@ func (c *Config) normItems(items []Item, path string) []Item {
 			it.Exec = ""
 		}
 
-		if it.Exec == "" && it.AppID == "" {
-			c.warn("%s (%q): no exec, appId or items, skipped", where, it.Label)
+		// A surviving Special is a built-in or a dynamic submenu, and a folder is
+		// a submenu; none of them has an exec by nature.
+		if it.Exec == "" && it.AppID == "" && it.Special == "" && it.Folder == "" {
+			c.warn("%s (%q): no exec, appId, special, folder or items, skipped", where, it.Label)
 			continue
 		}
 
@@ -346,8 +515,30 @@ func (c *Config) normItems(items []Item, path string) []Item {
 	return out
 }
 
-func (it Item) showCmd() int32     { return showCmdOf(it.Show) }
-func (l Launcher) showCmd() int32  { return showCmdOf(l.Show) }
+func (it Item) showCmd() int32    { return showCmdOf(it.Show) }
+func (l Launcher) showCmd() int32 { return showCmdOf(l.Show) }
+
+// confirms reports whether this entry asks before acting. Normalisation always
+// fills Confirm in for a power special, so nil here means "not a power entry".
+func (it Item) confirms() bool    { return it.Confirm != nil && *it.Confirm }
+func (l Launcher) confirms() bool { return l.Confirm != nil && *l.Confirm }
+
+// isPowerAction and listsADirectory answer "does this key apply here", which is
+// what the ignored-key warnings need. Both are asked during normalisation, at
+// which point a kindExec special has already been desugared away and a
+// surviving Special names either an action or a submenu.
+func (it Item) isPowerAction() bool {
+	_, ok := powerOpFor(it.Special)
+	return ok
+}
+
+func (it Item) listsADirectory() bool {
+	if it.Folder != "" {
+		return true
+	}
+	e, ok := lookupSpecial(it.Special)
+	return ok && e.kind == kindDyn && e.dynKind == dynFolder
+}
 
 func showCmdOf(show string) int32 {
 	switch show {

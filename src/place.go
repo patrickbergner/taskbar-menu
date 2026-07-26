@@ -11,6 +11,11 @@ type placement struct {
 	exclude RECT
 	dpi     uint32
 	edge    uint32
+	// work is the target monitor's work area, and the box tpmWorkArea confines
+	// the popup to. It is what the column split is budgeted against; see
+	// columnBreaks in menu.go. Left zero when no monitor could be identified,
+	// which reads as "unknown" and leaves the layout to Windows.
+	work RECT
 }
 
 // edgeInfo describes which screen edge the taskbar occupies and the strip it
@@ -118,6 +123,8 @@ func resolvePlacement(cursor POINT, anchorMode string) placement {
 		p.flags = alignFlags(p.edge)
 		return p
 	}
+
+	p.work = mi.RcWork
 
 	info := detectEdge(mi.RcMonitor, mi.RcWork)
 	if !info.ok {
