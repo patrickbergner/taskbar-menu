@@ -185,6 +185,42 @@ func TestNestedSubmenus(t *testing.T) {
 	}
 }
 
+// openAll only means anything alongside items -- on a plain exec entry there
+// is no submenu for it to prepend an "Open all" to, so it is a no-op flagged
+// the same way depth/limit are on the wrong kind of entry.
+func TestOpenAllOnlyAppliesToSubmenu(t *testing.T) {
+	cfg, err := LoadConfig(writeConfig(t, `{"items":[
+		{"label":"Leaf","exec":"a.exe","openAll":true}
+	]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Items) != 1 || !cfg.Items[0].OpenAll {
+		t.Fatalf("openAll should survive normalisation even when ignored: %+v", cfg.Items)
+	}
+	if len(cfg.Warnings) != 1 || !strings.Contains(cfg.Warnings[0], "openAll") {
+		t.Errorf("expected a warning naming openAll, got %v", cfg.Warnings)
+	}
+}
+
+func TestOpenAllSurvivesOnASubmenu(t *testing.T) {
+	cfg, err := LoadConfig(writeConfig(t, `{"items":[
+		{"label":"Group","openAll":true,"items":[
+			{"label":"A","exec":"a.exe"},
+			{"label":"B","exec":"b.exe"}
+		]}
+	]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Warnings) != 0 {
+		t.Errorf("unexpected warnings: %v", cfg.Warnings)
+	}
+	if !cfg.Items[0].OpenAll {
+		t.Error("openAll lost during normalisation")
+	}
+}
+
 func TestShowAndEnumNormalisation(t *testing.T) {
 	cfg, err := LoadConfig(writeConfig(t, `{
 		"theme":"DARK","anchor":"Cursor","iconSize":999,

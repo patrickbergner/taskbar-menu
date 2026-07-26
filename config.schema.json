@@ -229,6 +229,11 @@
                         "$ref": "#/definitions/item"
                     },
                     "description": "Turns the entry into a submenu at any depth. exec is ignored when present."
+                },
+                "openAll": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Only meaningful alongside items. Adds an \"Open all\" entry above the submenu's own entries, with a separator below it, that launches every launchable entry in the submenu with one click -- recursing into nested submenus, but not into a folder/special submenu whose contents are only discovered when opened, and skipping power actions."
                 }
             }
         },

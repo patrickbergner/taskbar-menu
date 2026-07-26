@@ -69,6 +69,11 @@ type Item struct {
 	Tooltip  string   `json:"tooltip"`
 	Items    []Item   `json:"items"`
 
+	// OpenAll adds a one-click "Open all" entry above this submenu's own
+	// entries, with a separator below, that launches every one of them. Only
+	// meaningful alongside Items -- see normItems and buildNodes.
+	OpenAll bool `json:"openAll"`
+
 	// Confirm gates a power action behind a yes/no dialog. A *bool for the same
 	// reason TrayIcon is one: the default is true for the destructive actions
 	// and false for the reversible ones, so "not set" has to be distinguishable
@@ -405,7 +410,7 @@ func (c *Config) normItems(items []Item, path string) []Item {
 				}
 				// Fully desugared: nothing downstream needs to know this entry
 				// began life as a special, which is why the catalog costs
-				// buildNodes, launch and --check no changes at all.
+				// buildNodes, launch and --config-check no changes at all.
 				it.Special = ""
 			case kindAction:
 				// Survives normalisation as a live special: there is no exec to
@@ -467,6 +472,10 @@ func (c *Config) normItems(items []Item, path string) []Item {
 
 		if it.Confirm != nil && !it.isPowerAction() {
 			c.warn("%s (%q): confirm only applies to a power action", where, it.Label)
+		}
+
+		if it.OpenAll && len(it.Items) == 0 {
+			c.warn("%s (%q): openAll only applies to a submenu with items", where, it.Label)
 		}
 
 		if it.Label == "" {

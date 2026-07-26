@@ -248,7 +248,7 @@ func TestIsShellMoniker(t *testing.T) {
 }
 
 // The catalog's whole value is icons that resolve to something real, and that is
-// exactly what --check cannot tell you: it prints the spec, not the result.
+// exactly what --config-check cannot tell you: it prints the spec, not the result.
 //
 // Deliberately does NOT go through iconFor. iconFor retries index 0 when the
 // requested index is missing (icons.go), which is the right behaviour for a

@@ -71,6 +71,7 @@ It is also exactly the config the screenshots on this page were taken with.
 | `show` | `"normal"` | `normal` \| `minimized` \| `maximized` \| `hidden`. |
 | `confirm` | depends | Only for a power action `special`. Ask before acting. See [Power actions](#power-actions). |
 | `items` | – | Turns the entry into a submenu, at any depth. `exec` is ignored when present. |
+| `openAll` | `false` | Adds an "Open all" entry above a submenu's own entries. See [Nested submenus](#nested-submenus). |
 | `folder` | – | Turns the entry into a submenu listing of a directory. See [Folder submenus](#folder-submenus). |
 | `depth` | `5` | How many directory levels a `folder` submenu descends (max 20). |
 | `limit` | `200` | Maximum entries shown per level of a `folder` submenu (max 2000). |
@@ -105,6 +106,19 @@ than the registered one, name it in `exec` and pass the document in `args`:
 An entry with an `items` array becomes a submenu, at any depth:
 
 ![Nested submenus, three levels deep](screenshot-nesting.png)
+
+Add `"openAll": true` to a submenu and it leads with an "Open all" entry that launches every entry
+below it in one click:
+
+```json
+{ "label": "Morning Apps", "openAll": true, "items": [
+    { "label": "Mail",   "exec": "C:\\Program Files\\Mozilla Thunderbird\\thunderbird.exe" },
+    { "label": "Chat",   "exec": "C:\\Program Files\\Slack\\slack.exe" },
+    { "label": "Browser", "exec": "C:\\Program Files\\Mozilla Firefox\\firefox.exe" }
+] }
+```
+
+It reaches into nested submenus too, but not into a `folder` or `special` submenu.
 
 ### Microsoft Store apps
 
@@ -273,9 +287,9 @@ file, so a config written for a newer build still opens.
 Two things worth knowing:
 
 - **Not every tool exists on every edition.** `gpedit` and `secpol` are absent on Windows Home.
-  `--check` reports `[target not found]` for those; the entry still appears in the menu.
+  `--config-check` reports `[target not found]` for those; the entry still appears in the menu.
 - **Labels are English** regardless of the system language, because resolving the localised name
-  would cost a shell call per entry and make `--check` print differently on every machine. Set
+  would cost a shell call per entry and make `--config-check` print differently on every machine. Set
   `label` to translate one.
 
 ### Folder submenus
@@ -368,7 +382,8 @@ Power actions work as launchers too, so "Shut Down" can be a taskbar button:
 TaskbarMenu.exe                        show the menu (starts the resident server on first run)
 TaskbarMenu.exe -b, --background       stay resident without showing the menu (use at logon)
 TaskbarMenu.exe -c, --config <path>    use a different config file
-TaskbarMenu.exe --check                validate the config, print the menu tree, exit
+TaskbarMenu.exe --config-check         validate the config, print the menu tree, exit
+TaskbarMenu.exe --config-format        pretty-print the config file in place, exit
 TaskbarMenu.exe --list-icons <file>    how many icons a file holds
 TaskbarMenu.exe --pick-icon  <file>    open the Windows icon picker
 TaskbarMenu.exe --list-specials        list the built-in "special" entry ids
@@ -432,6 +447,7 @@ src/
   main.go                 startup, single instance, message loop, CLI
   win32.go                syscall bindings and struct layouts
   config.go               JSON model, validation, change detection
+  format.go               --config-format: order-preserving pretty printer for config.json
   special.go              the "special" catalog of named Windows targets
   power.go                lock / sign out / sleep / restart / shut down
   dynamic.go              folder submenus enumerated when opened

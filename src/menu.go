@@ -70,6 +70,9 @@ func (a *appState) buildNodes(items []Item) []*node {
 
 		if len(it.Items) > 0 {
 			n.children = a.buildNodes(it.Items)
+			if it.OpenAll {
+				n.children = a.withOpenAll(n.children)
+			}
 			n.iconFile, n.iconIdx = resolveIconSource("", it.Icon)
 			a.register(n)
 			out = append(out, n)
@@ -114,6 +117,57 @@ func (a *appState) buildNodes(items []Item) []*node {
 		out = append(out, n)
 	}
 	return out
+}
+
+// withOpenAll prepends a one-click "Open all" entry and a separator below it
+// to a submenu's children -- the power-user answer to a submenu that is
+// really just a set of things opened together every time, one click at a
+// time otherwise.
+func (a *appState) withOpenAll(children []*node) []*node {
+	targets := collectLaunchTargets(children)
+	if len(targets) == 0 {
+		return children
+	}
+	open := a.registerCommand(&node{
+		label:  "Open all",
+		action: func() { a.launchAll(targets) },
+	})
+	sep := &node{separator: true, disabled: true}
+	a.register(sep)
+	return append([]*node{open, sep}, children...)
+}
+
+// collectLaunchTargets gathers every launchable leaf under a submenu,
+// recursing into nested submenus so "Open all" reaches entries at any depth.
+// A separator or spacer contributes nothing, a built-in action (a power
+// command, an already-collected "Open all" itself) is deliberately excluded --
+// batch-firing "Sign out" or "Shut down" alongside a browser is not what
+// "open all" should mean -- and a dynamic submenu is skipped because its
+// children only exist once opened; there is nothing here yet to collect.
+func collectLaunchTargets(nodes []*node) []*node {
+	var out []*node
+	for _, n := range nodes {
+		switch {
+		case n.separator || n.spacer || n.dyn != nil:
+			continue
+		case len(n.children) > 0:
+			out = append(out, collectLaunchTargets(n.children)...)
+		case n.action == nil && (n.exec != "" || n.appID != ""):
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// launchAll runs every target in turn. A failure is reported the same way a
+// single entry's is, rather than aborting the rest -- one bad path in a batch
+// of ten should not silently swallow the other nine.
+func (a *appState) launchAll(targets []*node) {
+	for _, n := range targets {
+		if err := launch(n); err != nil {
+			a.notify("TaskbarMenu", "Could not start "+n.label+"\n"+err.Error(), niifError)
+		}
+	}
 }
 
 // registerCommand makes a node clickable: it needs a command id for

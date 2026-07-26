@@ -1253,8 +1253,8 @@ func messageBoxEx(owner syscall.Handle, title, text string, flags uint32) int32 
 }
 
 // attachParentConsole reconnects stdout to the launching console. The exe is
-// built with -H windowsgui so it has none of its own, but --check, --list-icons
-// and --pick-icon still need to print somewhere useful.
+// built with -H windowsgui so it has none of its own, but --config-check,
+// --list-icons and --pick-icon still need to print somewhere useful.
 func attachParentConsole() bool {
 	// When the caller redirected stdout to a pipe or a file, Go already wired
 	// os.Stdout to it and there is nothing to do. Attaching to the parent

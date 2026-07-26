@@ -127,8 +127,8 @@ func dynSourceFor(it Item) *dynSource {
 }
 
 // dynSummary describes where a dynamic submenu's contents will come from, for
-// --check. It lives here rather than in printItems so that adding a dynKind is
-// a change to one file.
+// --config-check. It lives here rather than in printItems so that adding a
+// dynKind is a change to one file.
 func dynSummary(d *dynSource) string {
 	switch d.kind {
 	case dynSettings:

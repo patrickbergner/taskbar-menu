@@ -160,6 +160,9 @@ func main() {
 	case opts.check:
 		attachParentConsole()
 		os.Exit(checkConfig(defaultConfigPath(opts.cfgPath)))
+	case opts.format:
+		attachParentConsole()
+		os.Exit(formatConfig(defaultConfigPath(opts.cfgPath)))
 	}
 
 	// Per-Monitor V2 must be set before any window or DC exists. Doing it here
@@ -214,6 +217,7 @@ type options struct {
 	listIcons    string
 	pickIcon     string
 	listSpecials bool
+	format       bool   // pretty-print the config file in place, then exit
 	launch       string // run the launcher entry with this id/label, then exit
 	makeLauncher string // write a pinnable .lnk for this launcher id/label
 	makeAll      bool   // write a .lnk for every launcher entry
@@ -253,8 +257,10 @@ func parseArgs(args []string) (options, error) {
 			o.out, err = value(a)
 		case "--background", "-b":
 			o.background = true
-		case "--check":
+		case "--config-check":
 			o.check = true
+		case "--config-format":
+			o.format = true
 		case "--help", "-h", "/?":
 			o.help = true
 		case "--version", "-v":
@@ -290,10 +296,11 @@ entries. --launch runs one directly (this is what a pinned shortcut calls);
 drag onto the taskbar. Each click starts a new instance and the launcher never
 becomes a running-app entry, like the classic Windows launchers.
 
-Options:
+All options:
   -c, --config <path>     Config file (default: config.json next to the exe)
   -b, --background        Stay resident without showing the menu (use at logon)
-      --check             Validate the config and list every entry, then exit
+      --config-check      Validate the config and list every entry, then exit
+      --config-format     Pretty-print the config file in place, then exit
       --list-icons <f>    Report how many icons a .exe/.dll/.ico holds
       --pick-icon  <f>    Open the Windows icon picker, print a config spec
       --list-specials     List the built-in "special" entry ids
@@ -307,7 +314,7 @@ Options:
 }
 
 // defaultConfigPath resolves the config location the same way the server does,
-// so --check validates exactly the file that would be loaded.
+// so --config-check validates exactly the file that would be loaded.
 func defaultConfigPath(override string) string {
 	path := override
 	if path == "" {
@@ -371,7 +378,11 @@ func printItems(items []Item, indent string) (leaves, subs, seps int) {
 			fmt.Printf("%s----\n", indent)
 			seps++
 		case len(it.Items) > 0:
-			fmt.Printf("%s%s  >\n", indent, it.Label)
+			note := ""
+			if it.OpenAll {
+				note = "  [open all]"
+			}
+			fmt.Printf("%s%s  >%s\n", indent, it.Label, note)
 			subs++
 			l, s, p := printItems(it.Items, indent+"    ")
 			leaves, subs, seps = leaves+l, subs+s, seps+p

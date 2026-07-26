@@ -26,6 +26,86 @@ func repeat(n int, h int32) []int32 {
 	return out
 }
 
+// buildNodes must prepend a clickable "Open all" entry and a separator ahead
+// of a submenu's own entries when openAll is set on it -- the whole feature.
+func TestBuildNodesOpenAllPrependsEntryAndSeparator(t *testing.T) {
+	a := newTestApp()
+	items := []Item{
+		{
+			Label:   "Morning Apps",
+			OpenAll: true,
+			Items: []Item{
+				{Label: "Mail", Exec: "mail.exe"},
+				{Label: "Chat", Exec: "chat.exe"},
+			},
+		},
+	}
+	nodes := a.buildNodes(items)
+	if len(nodes) != 1 {
+		t.Fatalf("got %d top-level nodes, want 1", len(nodes))
+	}
+	children := nodes[0].children
+	got := labels(children)
+	want := []string{"Open all", "----", "Mail", "Chat"}
+	if len(got) != len(want) {
+		t.Fatalf("children = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("children = %v, want %v", got, want)
+		}
+	}
+	if children[0].action == nil {
+		t.Error("Open all entry has no action")
+	}
+	if !children[1].separator {
+		t.Error("second entry should be the separator below Open all")
+	}
+}
+
+// A submenu with nothing launchable in it -- only a separator, say -- gets no
+// "Open all" at all: there would be nothing for one click to do.
+func TestBuildNodesOpenAllSkippedWhenNoTargets(t *testing.T) {
+	a := newTestApp()
+	items := []Item{
+		{
+			Label:   "Empty",
+			OpenAll: true,
+			Items:   []Item{{Type: "separator"}},
+		},
+	}
+	nodes := a.buildNodes(items)
+	got := labels(nodes[0].children)
+	want := []string{"----"}
+	if len(got) != 1 || got[0] != want[0] {
+		t.Errorf("children = %v, want %v (no Open all prepended)", got, want)
+	}
+}
+
+// collectLaunchTargets is what decides what one click on "Open all" actually
+// fires: every launchable leaf, at any depth, but never a separator, a
+// spacer, a still-unpopulated dynamic submenu or a built-in action (a power
+// command has no business being batch-fired alongside a browser).
+func TestCollectLaunchTargets(t *testing.T) {
+	a := newTestApp()
+	nested := a.buildNodes([]Item{
+		{Label: "Deep", Exec: "deep.exe"},
+	})
+	nodes := []*node{
+		{label: "A", exec: "a.exe"},
+		{separator: true, disabled: true},
+		{spacer: true, disabled: true},
+		{label: "Power", action: func() {}},
+		{label: "Pending", dyn: &dynSource{kind: dynFolder, roots: []string{`C:\`}}},
+		{label: "Nested", children: nested},
+	}
+	got := labels(collectLaunchTargets(nodes))
+	want := []string{"A", "Deep"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("collectLaunchTargets labels = %v, want %v", got, want)
+	}
+}
+
 // A menu that fits gets no breaks at all, which is both the common case and the
 // one where a stray break would be most visible.
 func TestSplitColumnsFits(t *testing.T) {

@@ -60,9 +60,6 @@ The config is read from config.json next to the exe, or from --config
 $schema gives completion and validation. config.example.json shows one of
 every supported feature.
 
-Run "TaskbarMenu.exe --check" to validate the config and print the resulting
-menu tree without opening anything.
-
 
 CONFIGURATION
 ------------------------------------------------------------------------------
@@ -112,6 +109,8 @@ Entries
               before acting. See POWER ACTIONS.
   items       turns the entry into a submenu, at any depth. exec is
               ignored when present.
+  openAll     default false. Adds an "Open all" entry above a submenu's own
+              entries. See NESTED SUBMENUS.
   folder      turns the entry into a submenu listing of a directory. See
               FOLDER SUBMENUS.
   depth       default 5, max 20. How many directory levels a folder
@@ -153,6 +152,18 @@ An entry with an items array becomes a submenu, at any depth:
             { "label": "Notepad", "exec": "notepad.exe" }
         ] }
     ] }
+
+Add "openAll": true to a submenu and it leads with an "Open all" entry that launches
+every entry below it in one click:
+
+    { "label": "Morning Apps", "openAll": true, "items": [
+        { "label": "Mail",    "exec": "C:\\Program Files\\Mozilla Thunderbird\\thunderbird.exe" },
+        { "label": "Chat",    "exec": "C:\\Program Files\\Slack\\slack.exe" },
+        { "label": "Browser", "exec": "C:\\Program Files\\Mozilla Firefox\\firefox.exe" }
+    ] }
+
+It reaches into nested submenus too, but not into a folder or special
+submenu.
 
 
 MICROSOFT STORE APPS
@@ -334,11 +345,11 @@ opens.
 Two things worth knowing:
 
   - Not every tool exists on every edition. gpedit and secpol are absent on
-    Windows Home. --check reports [target not found] for those; the entry
-    still appears in the menu.
+    Windows Home. --config-check reports [target not found] for those; the
+    entry still appears in the menu.
   - Labels are English regardless of the system language, because
     resolving the localised name would cost a shell call per entry and
-    make --check print differently on every machine. Set label to
+    make --config-check print differently on every machine. Set label to
     translate one.
 
 
@@ -437,8 +448,10 @@ COMMAND LINE
     TaskbarMenu.exe -b, --background       stay resident without showing
                                            the menu (use at logon)
     TaskbarMenu.exe -c, --config <path>    use a different config file
-    TaskbarMenu.exe --check                validate the config, print the
+    TaskbarMenu.exe --config-check         validate the config, print the
                                            menu tree, exit
+    TaskbarMenu.exe --config-format        pretty-print the config file in
+                                           place, exit
     TaskbarMenu.exe --list-icons <file>    how many icons a file holds
     TaskbarMenu.exe --pick-icon  <file>    open the Windows icon picker
     TaskbarMenu.exe --list-specials        list the built-in "special"
@@ -458,7 +471,7 @@ TROUBLESHOOTING
 
 A config error never produces an empty menu: the parse error, with its line
 and column, becomes a clickable menu item that opens the file. Run
-"TaskbarMenu.exe --check" to see the same information on the console.
+"TaskbarMenu.exe --config-check" to see the same information on the console.
 
 Edits to config.json are picked up automatically. The file is re-read
 whenever it has changed, so no restart is needed.
