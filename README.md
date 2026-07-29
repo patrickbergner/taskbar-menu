@@ -76,6 +76,7 @@ It is also exactly the config the screenshots on this page were taken with.
 | `folder` | – | Turns the entry into a submenu listing of a directory. See [Folder submenus](#folder-submenus). |
 | `depth` | `5` | How many directory levels a `folder` submenu descends (max 20). |
 | `limit` | `200` | Maximum entries shown per level of a `folder` submenu (max 2000). |
+| `sort` | `nameAsc` | Sort order for a `folder` submenu's entries. See [Folder submenus](#folder-submenus). |
 
 ¹ except for a separator, and for an entry with `special`, which brings its own label.
 
@@ -325,8 +326,22 @@ Two things worth knowing:
 The listing is read **when the submenu is opened**, not at startup, so it always shows what is there.
 
 The submenu leads with an **Open …** item and a separator, so the folder itself is still one click
-away. Directories come first, then files, each alphabetical. Hidden and system entries are
-skipped, as are junctions and symlinks.
+away. Directories always come before files. Hidden and system entries are skipped, as are
+junctions and symlinks.
+
+`sort` picks the order within each group:
+
+| Value | Order |
+| --- | --- |
+| `nameAsc` (default) | Name, A→Z. |
+| `nameDesc` | Name, Z→A. |
+| `typeAsc` / `typeDesc` | File extension, A→Z / Z→A. Directories have none, so they stay name-ascending. |
+| `sizeAsc` / `sizeDesc` | File size, smallest/largest first. Directories stay name-ascending — a folder's total size is never computed, since that would mean walking its entire subtree up front. |
+| `createdAsc` / `createdDesc` | Creation time, oldest/newest first. Applies to directories too, by their own timestamp. |
+| `modifiedAsc` / `modifiedDesc` | Last modified time, oldest/newest first. Applies to directories too, by their own timestamp. |
+
+`sort` also applies to the catalog `special` ids below that are folder submenus (`startMenu`,
+`desktop`, and so on), the same as `depth` and `limit` do.
 
 Six special entry catalog IDs are folder submenus over well-known locations:
 

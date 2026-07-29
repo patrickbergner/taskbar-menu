@@ -41,8 +41,7 @@ type StringTable struct {
 	OpenAll          string `json:"openAll"`
 	OpenFolderFormat string `json:"openFolderFormat"` // %s = the entry's own label
 	EmptyFolder      string `json:"emptyFolder"`
-	More             string `json:"more"`       // no root to open (rare)
-	MoreFormat       string `json:"moreFormat"` // %d = entries shown before truncation
+	More             string `json:"more"`
 
 	NotifyLaunchFailedFormat     string `json:"notifyLaunchFailedFormat"`     // %s label, %s error
 	NotifyConfigErrorFormat      string `json:"notifyConfigErrorFormat"`      // %s error

@@ -89,7 +89,7 @@ func TestLocalizedNameFollowsDesktopIni(t *testing.T) {
 	// And the listing must use it: this is the bug as reported, where Windows
 	// Tools showed "dfrgui" and "services" instead of the names Explorer shows.
 	a := newTestApp()
-	got := labels(a.expandFolder([]string{dir}, 1, defaultLimit, newBudget()))
+	got := labels(a.expandFolder([]string{dir}, 1, defaultLimit, sortNameAsc, newBudget()))
 	if len(got) != 1 || got[0] != name {
 		t.Errorf("listing = %v, want [%s]", got, name)
 	}
@@ -102,7 +102,7 @@ func TestPlainFolderKeepsFileNames(t *testing.T) {
 	defer purgeLocalizedNames()
 
 	a := newTestApp()
-	got := labels(a.expandFolder([]string{dir}, 1, defaultLimit, newBudget()))
+	got := labels(a.expandFolder([]string{dir}, 1, defaultLimit, sortNameAsc, newBudget()))
 	if len(got) != 1 || got[0] != "services" {
 		t.Errorf("listing = %v, want [services]", got)
 	}
@@ -135,7 +135,7 @@ func TestSortDirEntriesDirsFirstThenAlpha(t *testing.T) {
 		{label: "apricot", path: `C:\apricot`, dir: true},
 		{label: "Banana.txt", path: `C:\B`},
 	}
-	sortDirEntries(in)
+	sortDirEntries(in, sortNameAsc)
 	got := make([]string, len(in))
 	for i, e := range in {
 		got[i] = e.label
@@ -146,6 +146,98 @@ func TestSortDirEntriesDirsFirstThenAlpha(t *testing.T) {
 			t.Fatalf("sorted = %v, want %v", got, want)
 		}
 	}
+}
+
+// checkLabels is the shared assertion for the sortDirEntries mode tests below:
+// it fails with the full got/want on any mismatch, in call order.
+func checkLabels(t *testing.T, got, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	}
+}
+
+func TestSortDirEntriesNameDesc(t *testing.T) {
+	in := []dirEntry{
+		{label: "apple.txt", path: `C:\apple.txt`},
+		{label: "banana.txt", path: `C:\banana.txt`},
+		{label: "Zebra", path: `C:\Zebra`, dir: true},
+		{label: "apricot", path: `C:\apricot`, dir: true},
+	}
+	sortDirEntries(in, sortNameDesc)
+	checkLabels(t, labelsOf(in), []string{"Zebra", "apricot", "banana.txt", "apple.txt"})
+}
+
+// typeAsc/typeDesc group files by extension; a directory has none, so it always
+// keeps its place in a name-ascending block regardless of direction.
+func TestSortDirEntriesByType(t *testing.T) {
+	in := []dirEntry{
+		{label: "b.txt", path: `C:\b.txt`},
+		{label: "a.exe", path: `C:\a.exe`},
+		{label: "c.txt", path: `C:\c.txt`},
+		{label: "Zdir", path: `C:\Zdir`, dir: true},
+		{label: "adir", path: `C:\adir`, dir: true},
+	}
+	sortDirEntries(in, sortTypeAsc)
+	checkLabels(t, labelsOf(in), []string{"adir", "Zdir", "a.exe", "b.txt", "c.txt"})
+
+	sortDirEntries(in, sortTypeDesc)
+	checkLabels(t, labelsOf(in), []string{"adir", "Zdir", "b.txt", "c.txt", "a.exe"})
+}
+
+// sizeAsc/sizeDesc order files by byte count; a directory's total is never
+// computed, so it falls back to the same name-ascending block as typeAsc/Desc.
+func TestSortDirEntriesBySize(t *testing.T) {
+	in := []dirEntry{
+		{label: "big.txt", path: `C:\big.txt`, size: 300},
+		{label: "small.txt", path: `C:\small.txt`, size: 10},
+		{label: "mid.txt", path: `C:\mid.txt`, size: 100},
+		{label: "Zdir", path: `C:\Zdir`, dir: true},
+		{label: "adir", path: `C:\adir`, dir: true},
+	}
+	sortDirEntries(in, sortSizeAsc)
+	checkLabels(t, labelsOf(in), []string{"adir", "Zdir", "small.txt", "mid.txt", "big.txt"})
+
+	sortDirEntries(in, sortSizeDesc)
+	checkLabels(t, labelsOf(in), []string{"adir", "Zdir", "big.txt", "mid.txt", "small.txt"})
+}
+
+// createdAsc/createdDesc and modifiedAsc/modifiedDesc are the two modes where a
+// directory is not exempt: its own timestamp decides its place among the other
+// directories, so a recently touched folder can surface first.
+func TestSortDirEntriesByCreated(t *testing.T) {
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	in := []dirEntry{
+		{label: "new.txt", path: `C:\new.txt`, created: base.Add(3 * time.Hour)},
+		{label: "old.txt", path: `C:\old.txt`, created: base},
+		{label: "NewDir", path: `C:\NewDir`, dir: true, created: base.Add(2 * time.Hour)},
+		{label: "OldDir", path: `C:\OldDir`, dir: true, created: base.Add(time.Hour)},
+	}
+	sortDirEntries(in, sortCreatedAsc)
+	checkLabels(t, labelsOf(in), []string{"OldDir", "NewDir", "old.txt", "new.txt"})
+
+	sortDirEntries(in, sortCreatedDesc)
+	checkLabels(t, labelsOf(in), []string{"NewDir", "OldDir", "new.txt", "old.txt"})
+}
+
+func TestSortDirEntriesByModified(t *testing.T) {
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	in := []dirEntry{
+		{label: "new.txt", path: `C:\new.txt`, modified: base.Add(3 * time.Hour)},
+		{label: "old.txt", path: `C:\old.txt`, modified: base},
+		{label: "NewDir", path: `C:\NewDir`, dir: true, modified: base.Add(2 * time.Hour)},
+		{label: "OldDir", path: `C:\OldDir`, dir: true, modified: base.Add(time.Hour)},
+	}
+	sortDirEntries(in, sortModifiedAsc)
+	checkLabels(t, labelsOf(in), []string{"OldDir", "NewDir", "old.txt", "new.txt"})
+
+	sortDirEntries(in, sortModifiedDesc)
+	checkLabels(t, labelsOf(in), []string{"NewDir", "OldDir", "new.txt", "old.txt"})
 }
 
 // The Start Menu rule: the per-user and all-users trees must read as one menu.
@@ -228,7 +320,7 @@ func TestExpandFolderListsAndSorts(t *testing.T) {
 	}
 
 	a := newTestApp()
-	got := labels(a.expandFolder([]string{dir}, 1, defaultLimit, newBudget()))
+	got := labels(a.expandFolder([]string{dir}, 1, defaultLimit, sortNameAsc, newBudget()))
 	want := []string{"sub", "Alpha", "zeta.txt"} // dir first, then .lnk stripped, alphabetical
 	if len(got) != len(want) {
 		t.Fatalf("got %v, want %v", got, want)
@@ -251,13 +343,13 @@ func TestExpandFolderRespectsDepth(t *testing.T) {
 	mustWrite(t, filepath.Join(dir, "sub", "inner.txt"), "i")
 
 	a := newTestApp()
-	flat := a.expandFolder([]string{dir}, 1, defaultLimit, newBudget())
+	flat := a.expandFolder([]string{dir}, 1, defaultLimit, sortNameAsc, newBudget())
 	if len(flat) != 1 || flat[0].dyn != nil || !strings.HasSuffix(flat[0].exec, "sub") {
 		t.Fatalf("depth 1 should make a plain leaf, got %+v", flat[0])
 	}
 
 	a = newTestApp()
-	deep := a.expandFolder([]string{dir}, 2, defaultLimit, newBudget())
+	deep := a.expandFolder([]string{dir}, 2, defaultLimit, sortNameAsc, newBudget())
 	if len(deep) != 1 || deep[0].dyn == nil {
 		t.Fatalf("depth 2 should make a dynamic submenu, got %+v", deep[0])
 	}
@@ -280,7 +372,7 @@ func TestExpandFolderSkipsHiddenAndDesktopIni(t *testing.T) {
 	}
 
 	a := newTestApp()
-	got := labels(a.expandFolder([]string{dir}, 1, defaultLimit, newBudget()))
+	got := labels(a.expandFolder([]string{dir}, 1, defaultLimit, sortNameAsc, newBudget()))
 	for _, l := range got {
 		if l == "desktop.ini" || l == "hidden.txt" {
 			t.Errorf("%q should not appear; got %v", l, got)
@@ -297,7 +389,7 @@ func TestTruncationEmitsMoreNode(t *testing.T) {
 		mustWrite(t, filepath.Join(dir, n), "x")
 	}
 	a := newTestApp()
-	got := a.expandFolder([]string{dir}, 1, 2, newBudget())
+	got := a.expandFolder([]string{dir}, 1, 2, sortNameAsc, newBudget())
 	if len(got) != 3 {
 		t.Fatalf("got %v, want 2 entries plus the overflow node", labels(got))
 	}
@@ -327,7 +419,7 @@ func TestWalkBudgetStopsWhenSpent(t *testing.T) {
 	}
 
 	a := newTestApp()
-	if got := a.expandFolder([]string{t.TempDir()}, 1, defaultLimit, expired); got != nil {
+	if got := a.expandFolder([]string{t.TempDir()}, 1, defaultLimit, sortNameAsc, expired); got != nil {
 		t.Errorf("an exhausted budget must stop the walk, got %v", labels(got))
 	}
 }
@@ -361,7 +453,7 @@ func TestExpandFolderToleratesMissingRoot(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "a.txt"), "a")
 	a := newTestApp()
-	got := labels(a.expandFolder([]string{filepath.Join(dir, "nope"), dir}, 1, defaultLimit, newBudget()))
+	got := labels(a.expandFolder([]string{filepath.Join(dir, "nope"), dir}, 1, defaultLimit, sortNameAsc, newBudget()))
 	if len(got) != 1 || got[0] != "a.txt" {
 		t.Errorf("got %v, want [a.txt]", got)
 	}
@@ -416,16 +508,20 @@ func TestFolderConfigDefaultsAndFlags(t *testing.T) {
 	if d.depth != defaultDepth || d.limit != defaultLimit {
 		t.Errorf("defaults not applied: depth=%d limit=%d", d.depth, d.limit)
 	}
+	if d.sort != sortNameAsc {
+		t.Errorf("sort default = %q, want %q", d.sort, sortNameAsc)
+	}
 }
 
 // depth on an entry that lists nothing is a silent no-op unless it warns, and
 // this file warns about every other ignored key.
 func TestDepthAndConfirmWarnOnTheWrongKind(t *testing.T) {
 	cases := map[string]string{
-		`{"items":[{"label":"A","exec":"a.exe","depth":3}]}`: "depth/limit",
-		`{"items":[{"special":"allSettings","depth":3}]}`:    "depth/limit",
-		`{"items":[{"special":"shutdown","limit":50}]}`:      "depth/limit",
-		`{"items":[{"special":"startMenu","confirm":true}]}`: "confirm",
+		`{"items":[{"label":"A","exec":"a.exe","depth":3}]}`:         "depth/limit",
+		`{"items":[{"special":"allSettings","depth":3}]}`:            "depth/limit",
+		`{"items":[{"special":"shutdown","limit":50}]}`:              "depth/limit",
+		`{"items":[{"label":"A","exec":"a.exe","sort":"nameDesc"}]}`: "depth/limit",
+		`{"items":[{"special":"startMenu","confirm":true}]}`:         "confirm",
 	}
 	for body, want := range cases {
 		cfg, err := LoadConfig(writeConfig(t, body))
@@ -441,6 +537,8 @@ func TestDepthAndConfirmWarnOnTheWrongKind(t *testing.T) {
 	for _, body := range []string{
 		`{"items":[{"special":"startMenu","depth":2}]}`,
 		`{"items":[{"folder":"C:\\X","limit":10}]}`,
+		`{"items":[{"special":"startMenu","sort":"modifiedDesc"}]}`,
+		`{"items":[{"folder":"C:\\X","sort":"sizeAsc"}]}`,
 		`{"items":[{"special":"shutdown","confirm":false}]}`,
 	} {
 		cfg, err := LoadConfig(writeConfig(t, body))

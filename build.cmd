@@ -30,7 +30,7 @@ if errorlevel 1 goto :fail
 set GOARCH=
 
 echo [4/4] Set Application Icon and Version (%VERSION%)
- "%BIN%\SetIcon.exe" "%BIN%\TaskbarMenu-AMD64.exe" "%ROOT%app-icon\icon.ico" "%VERSION%"
+"%BIN%\SetIcon.exe" "%BIN%\TaskbarMenu-AMD64.exe" "%ROOT%app-icon\icon.ico" "%VERSION%"
 if errorlevel 1 goto :fail
 "%BIN%\SetIcon.exe" "%BIN%\TaskbarMenu-ARM64.exe" "%ROOT%app-icon\icon.ico" "%VERSION%"
 if errorlevel 1 goto :fail

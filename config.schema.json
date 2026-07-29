@@ -229,6 +229,22 @@
                     "default": 200,
                     "description": "Maximum entries shown per level of a folder submenu. Anything beyond it is replaced by a clickable \"More…\" entry that opens the folder in Explorer. Values above 2000 are clamped with a warning."
                 },
+                "sort": {
+                    "enum": [
+                        "nameAsc",
+                        "nameDesc",
+                        "typeAsc",
+                        "typeDesc",
+                        "sizeAsc",
+                        "sizeDesc",
+                        "createdAsc",
+                        "createdDesc",
+                        "modifiedAsc",
+                        "modifiedDesc"
+                    ],
+                    "default": "nameAsc",
+                    "description": "Sort order for a folder submenu's entries. Directories always come before files. typeAsc/typeDesc sort files by extension, and sizeAsc/sizeDesc by file size; directories have neither, so they fall back to name order within their group. createdAsc/createdDesc and modifiedAsc/modifiedDesc sort both directories and files by their own timestamp."
+                },
                 "items": {
                     "type": "array",
                     "items": {

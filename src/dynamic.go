@@ -36,6 +36,7 @@ type dynSource struct {
 	roots []string
 	depth int
 	limit int
+	sort  string
 
 	// drivesOnly filters a shell listing down to drive roots; This PC also
 	// contains the Documents/Pictures/... shortcuts, which are their own
@@ -94,6 +95,7 @@ func dynSourceFor(it Item) *dynSource {
 			roots:     []string{it.Folder},
 			depth:     clampDepth(it.Depth),
 			limit:     clampLimit(it.Limit),
+			sort:      it.Sort,
 			openLabel: it.Label,
 		}
 	}
@@ -115,6 +117,7 @@ func dynSourceFor(it Item) *dynSource {
 		roots:      roots,
 		depth:      clampDepth(it.Depth),
 		limit:      clampLimit(it.Limit),
+		sort:       it.Sort,
 		drivesOnly: e.drivesOnly,
 	}
 	// Only a directory listing gets an "Open …" lead item; there is nothing
@@ -172,7 +175,7 @@ func (a *appState) expand(d *dynSource) []*node {
 		out = append(out, open, sep)
 	}
 
-	out = append(out, a.expandFolder(d.roots, d.depth, d.limit, b)...)
+	out = append(out, a.expandFolder(d.roots, d.depth, d.limit, d.sort, b)...)
 	return a.nonEmpty(out)
 }
 
@@ -220,7 +223,7 @@ func (a *appState) expandShell(d *dynSource, b *walkBudget) []*node {
 		out = append(out, a.leafNode(e.display, launchTargetFor(e.parsing)))
 	}
 	if truncated {
-		out = append(out, a.moreNode(d.roots, len(kept)))
+		out = append(out, a.moreNode(d.roots))
 	}
 	return out
 }
@@ -251,7 +254,7 @@ func (a *appState) expandSettings() []*node {
 }
 
 // expandFolder lists one level of one or more merged roots.
-func (a *appState) expandFolder(roots []string, depth, limit int, b *walkBudget) []*node {
+func (a *appState) expandFolder(roots []string, depth, limit int, sortMode string, b *walkBudget) []*node {
 	if depth <= 0 || b.spent() {
 		return nil
 	}
@@ -269,7 +272,7 @@ func (a *appState) expandFolder(roots []string, depth, limit int, b *walkBudget)
 	}
 
 	merged := mergeLevels(lists)
-	sortDirEntries(merged)
+	sortDirEntries(merged, sortMode)
 
 	truncated := false
 	if len(merged) > limit {
@@ -282,7 +285,7 @@ func (a *appState) expandFolder(roots []string, depth, limit int, b *walkBudget)
 	for _, e := range merged {
 		if e.dir && depth > 1 {
 			n := &node{label: e.label}
-			n.dyn = &dynSource{kind: dynFolder, roots: e.roots, depth: depth - 1, limit: limit}
+			n.dyn = &dynSource{kind: dynFolder, roots: e.roots, depth: depth - 1, limit: limit, sort: sortMode}
 			n.iconFile, n.iconLazy = e.path, true
 			a.register(n)
 			out = append(out, n)
@@ -292,7 +295,7 @@ func (a *appState) expandFolder(roots []string, depth, limit int, b *walkBudget)
 	}
 
 	if truncated || b.spent() {
-		out = append(out, a.moreNode(roots, len(merged)))
+		out = append(out, a.moreNode(roots))
 	}
 	return out
 }
@@ -314,9 +317,9 @@ func (a *appState) disabledNode(label string) *node {
 
 // moreNode is the overflow entry. It is enabled and opens the containing folder,
 // so hitting the limit is a door rather than a dead end.
-func (a *appState) moreNode(roots []string, shown int) *node {
+func (a *appState) moreNode(roots []string) *node {
 	if len(roots) > 0 {
-		return a.leafNode(fmt.Sprintf(ui.MoreFormat, shown), roots[0])
+		return a.leafNode(ui.More, roots[0])
 	}
 	return a.disabledNode(ui.More)
 }
@@ -384,6 +387,16 @@ type dirEntry struct {
 	// roots carries every directory this entry was merged from, so the level
 	// below can merge in turn.
 	roots []string
+
+	// size, created and modified back the sizeAsc/sizeDesc, createdAsc/createdDesc
+	// and modifiedAsc/modifiedDesc sort modes. size is meaningless for a
+	// directory (its total is never computed -- that would mean recursively
+	// stat-ing the whole subtree, exactly what the budgeted, one-level-at-a-time
+	// design avoids) and is left zero there; sortDirEntries never reads it for a
+	// directory entry.
+	size     int64
+	created  time.Time
+	modified time.Time
 }
 
 // collectEntries turns one ReadDir result into level entries, dropping what a
@@ -413,7 +426,13 @@ func collectEntries(root string, ents []os.DirEntry) []dirEntry {
 			continue
 		}
 		full := filepath.Join(root, name)
-		d := dirEntry{label: displayName(name, e.IsDir()), path: full, dir: e.IsDir()}
+		d := dirEntry{label: displayName(name, e.IsDir()), path: full, dir: e.IsDir(), modified: info.ModTime()}
+		if !d.dir {
+			d.size = info.Size()
+		}
+		if wd, ok := info.Sys().(*syscall.Win32FileAttributeData); ok {
+			d.created = time.Unix(0, wd.CreationTime.Nanoseconds())
+		}
 		// A directory is asked whatever this level says, because the desktop.ini
 		// that renames a folder is the one inside it, which the level above
 		// cannot see.
@@ -523,25 +542,104 @@ func dropShadowedFiles(in []dirEntry) []dirEntry {
 	return out
 }
 
-// sortDirEntries orders a level: directories first, then files, each group
-// case-insensitively by the *display* label with the raw path as a stable
-// tiebreak.
+// Sort mode values for the "sort" config key on a folder submenu. Plain
+// strings, not a Go enum, because that is what the JSON field holds and what
+// normItems validates against; see config.go.
+const (
+	sortNameAsc      = "nameAsc"
+	sortNameDesc     = "nameDesc"
+	sortTypeAsc      = "typeAsc"
+	sortTypeDesc     = "typeDesc"
+	sortSizeAsc      = "sizeAsc"
+	sortSizeDesc     = "sizeDesc"
+	sortCreatedAsc   = "createdAsc"
+	sortCreatedDesc  = "createdDesc"
+	sortModifiedAsc  = "modifiedAsc"
+	sortModifiedDesc = "modifiedDesc"
+)
+
+// sortDirEntries orders a level: directories always come before files,
+// regardless of mode -- a submenu that mixed them would defeat the point of
+// browsing a folder as a menu. Within each group, mode picks the ordering; a
+// tie (including plain nameAsc, and any unrecognised mode) falls back to the
+// case-insensitive label, then the raw path, for a fully stable order.
 //
-// It is what Explorer does and what the classic cascading Start menu did, so it
-// is what the muscle memory expects. Sorting on the label rather than the file
-// name is the part that matters in a Start Menu: it files "Firefox.lnk" under F
-// where someone looking for Firefox will look.
-func sortDirEntries(e []dirEntry) {
+// It is what Explorer does and what the classic cascading Start menu did, so
+// nameAsc is what the muscle memory expects. Sorting on the label rather than
+// the file name is the part that matters in a Start Menu: it files
+// "Firefox.lnk" under F where someone looking for Firefox will look.
+func sortDirEntries(e []dirEntry, mode string) {
 	sort.SliceStable(e, func(i, j int) bool {
 		if e[i].dir != e[j].dir {
 			return e[i].dir
 		}
-		li, lj := strings.ToLower(e[i].label), strings.ToLower(e[j].label)
-		if li != lj {
-			return li < lj
+		if less, ok := sortLess(e[i], e[j], mode); ok {
+			return less
 		}
-		return strings.ToLower(e[i].path) < strings.ToLower(e[j].path)
+		return labelLess(e[i], e[j])
 	})
+}
+
+// sortLess applies mode's primary key to two entries already known to be in
+// the same group (both directories or both files). It reports ok=false --
+// meaning "fall back to label order" -- on a tie, and also for typeAsc/
+// typeDesc and sizeAsc/sizeDesc when the pair is a pair of directories: a
+// directory has no extension, and its total size is never computed (that
+// would mean recursively stat-ing the whole subtree, exactly what the
+// budgeted, one-level-at-a-time walk exists to avoid). createdAsc/createdDesc
+// and modifiedAsc/modifiedDesc have no such exception: a directory's own
+// timestamp is as real as a file's, so it takes part in date ordering too.
+func sortLess(a, b dirEntry, mode string) (less, ok bool) {
+	switch mode {
+	case sortNameDesc:
+		if la, lb := strings.ToLower(a.label), strings.ToLower(b.label); la != lb {
+			return la > lb, true
+		}
+	case sortTypeAsc, sortTypeDesc:
+		if a.dir {
+			break
+		}
+		if ea, eb := strings.ToLower(filepath.Ext(a.path)), strings.ToLower(filepath.Ext(b.path)); ea != eb {
+			if mode == sortTypeDesc {
+				return ea > eb, true
+			}
+			return ea < eb, true
+		}
+	case sortSizeAsc, sortSizeDesc:
+		if a.dir {
+			break
+		}
+		if a.size != b.size {
+			if mode == sortSizeDesc {
+				return a.size > b.size, true
+			}
+			return a.size < b.size, true
+		}
+	case sortCreatedAsc, sortCreatedDesc:
+		if !a.created.Equal(b.created) {
+			if mode == sortCreatedDesc {
+				return a.created.After(b.created), true
+			}
+			return a.created.Before(b.created), true
+		}
+	case sortModifiedAsc, sortModifiedDesc:
+		if !a.modified.Equal(b.modified) {
+			if mode == sortModifiedDesc {
+				return a.modified.After(b.modified), true
+			}
+			return a.modified.Before(b.modified), true
+		}
+	}
+	return false, false
+}
+
+// labelLess is the tiebreak every mode falls back to.
+func labelLess(a, b dirEntry) bool {
+	la, lb := strings.ToLower(a.label), strings.ToLower(b.label)
+	if la != lb {
+		return la < lb
+	}
+	return strings.ToLower(a.path) < strings.ToLower(b.path)
 }
 
 // clampDepth and clampLimit keep a hand-edited config inside the range the

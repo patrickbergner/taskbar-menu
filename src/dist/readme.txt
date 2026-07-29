@@ -122,6 +122,8 @@ Entries
               submenu descends.
   limit       default 200, max 2000. Maximum entries shown per level of a
               folder submenu.
+  sort        default "nameAsc". Sort order for a folder submenu's entries.
+              See FOLDER SUBMENUS.
 
 label, exec, icon, cwd and each args element expand %VAR% environment
 references. An unset variable is left verbatim, so a typo shows up in the
@@ -394,9 +396,28 @@ The listing is read when the submenu is opened, not at startup, so it
 always shows what is there.
 
 The submenu leads with an "Open ..." item and a separator, so the folder
-itself is still one click away. Directories come first, then files, each
-alphabetical. Hidden and system entries are skipped, as are junctions and
-symlinks.
+itself is still one click away. Directories always come before files.
+Hidden and system entries are skipped, as are junctions and symlinks.
+
+sort picks the order within each group:
+
+  nameAsc (default)            name, A-Z
+  nameDesc                     name, Z-A
+  typeAsc / typeDesc           file extension, A-Z / Z-A; directories have
+                               none, so they stay name-ascending
+  sizeAsc / sizeDesc           file size, smallest/largest first;
+                               directories stay name-ascending too - a
+                               folder's total size is never computed, since
+                               that would mean walking its entire subtree
+                               up front
+  createdAsc / createdDesc     creation time, oldest/newest first; applies
+                               to directories too, by their own timestamp
+  modifiedAsc / modifiedDesc   last modified time, oldest/newest first;
+                               applies to directories too, by their own
+                               timestamp
+
+sort also applies to the catalog specials below that are folder submenus
+(startMenu, desktop, and so on), the same as depth and limit do.
 
 Six special entry catalog IDs are folder submenus over well-known
 locations:

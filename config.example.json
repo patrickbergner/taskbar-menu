@@ -117,7 +117,7 @@
                     ]
                 },
                 { "type": "separator" },
-                { "label": "Wallpaper", "folder": "C:\\Windows\\Web", "depth": 2 }
+                { "label": "Wallpaper", "folder": "C:\\Windows\\Web", "depth": 2, "sort": "modifiedDesc" }
             ]
         },
         { "type": "separator" },

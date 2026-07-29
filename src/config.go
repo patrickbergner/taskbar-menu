@@ -62,6 +62,7 @@ type Item struct {
 	Folder   string   `json:"folder"`  // directory enumerated live into a submenu
 	Depth    int      `json:"depth"`   // folder recursion, 1..20
 	Limit    int      `json:"limit"`   // max entries per level
+	Sort     string   `json:"sort"`    // nameAsc | nameDesc | typeAsc | typeDesc | sizeAsc | sizeDesc | createdAsc | createdDesc | modifiedAsc | modifiedDesc
 	Args     []string `json:"args"`
 	Icon     string   `json:"icon"`
 	Cwd      string   `json:"cwd"`
@@ -464,9 +465,9 @@ func (c *Config) normItems(items []Item, path string) []Item {
 		// lives in dynSourceFor, which is the only thing that reads them, and
 		// having it in one place means a changed default cannot disagree with
 		// itself. A plain exec entry keeps depth 0 rather than a meaningless 1.
-		if it.Depth != 0 || it.Limit != 0 {
+		if it.Depth != 0 || it.Limit != 0 || it.Sort != "" {
 			if !it.listsADirectory() {
-				c.warn("%s (%q): depth/limit only apply to a folder submenu", where, it.Label)
+				c.warn("%s (%q): depth/limit/sort only apply to a folder submenu", where, it.Label)
 			}
 			if it.Depth > maxDepth {
 				c.warn("%s (%q): depth %d exceeds the maximum of %d", where, it.Label, it.Depth, maxDepth)
@@ -474,6 +475,32 @@ func (c *Config) normItems(items []Item, path string) []Item {
 			if it.Limit > maxLimit {
 				c.warn("%s (%q): limit %d exceeds the maximum of %d", where, it.Label, it.Limit, maxLimit)
 			}
+		}
+
+		switch strings.ToLower(it.Sort) {
+		case "", "nameasc":
+			it.Sort = sortNameAsc
+		case "namedesc":
+			it.Sort = sortNameDesc
+		case "typeasc":
+			it.Sort = sortTypeAsc
+		case "typedesc":
+			it.Sort = sortTypeDesc
+		case "sizeasc":
+			it.Sort = sortSizeAsc
+		case "sizedesc":
+			it.Sort = sortSizeDesc
+		case "createdasc":
+			it.Sort = sortCreatedAsc
+		case "createddesc":
+			it.Sort = sortCreatedDesc
+		case "modifiedasc":
+			it.Sort = sortModifiedAsc
+		case "modifieddesc":
+			it.Sort = sortModifiedDesc
+		default:
+			c.warn("%s (%q): unknown sort %q, using %q", where, it.Label, it.Sort, sortNameAsc)
+			it.Sort = sortNameAsc
 		}
 
 		if it.Confirm != nil && !it.isPowerAction() {

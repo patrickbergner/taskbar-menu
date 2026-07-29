@@ -14,7 +14,6 @@
     "openFolderFormat": "%s öffnen",
     "emptyFolder": "(leer)",
     "more": "Mehr…",
-    "moreFormat": "Mehr… (zeigt die ersten %d)",
 
     "notifyLaunchFailedFormat": "%s konnte nicht gestartet werden\n%s",
     "notifyConfigErrorFormat": "Konfigurationsfehler: %s",
