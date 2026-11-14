@@ -98,10 +98,15 @@ func TestResolveIconSourceExplicitIconBeatsShortcut(t *testing.T) {
 
 // Why maxLinkHops guards a shape that is rare rather than one that is common:
 // the shell collapses a chain as it writes it. Pointing a shortcut at another
-// shortcut stores the second one's *target*, not the second one, so a link
-// written through IShellLink can never start a chain -- which is also why a
-// cycle cannot be built here to test the bound against. The bound stays for the
-// .lnk the shell did not write.
+// shortcut never stores the second one, so a link written through IShellLink
+// can never start a chain -- which is also why a cycle cannot be built here to
+// test the bound against. The bound stays for the .lnk the shell did not write.
+//
+// *How* it collapses differs between Windows builds, so only the outcome is
+// asserted. On a desktop build GetPath on A reports B's target. On the GitHub
+// Actions runner GetPath reports nothing, and the target comes back as A's
+// icon location instead. Either way A leads to notepad.exe in one hop and
+// never to B.lnk.
 //
 // Built in this order because the shell also refuses to save a link whose target
 // does not exist yet: B has to point somewhere real before A can aim at it.
@@ -116,8 +121,13 @@ func TestShortcutChainsAreCollapsedByTheShell(t *testing.T) {
 	makeTestLink(t, b, target, "")
 	makeTestLink(t, a, b, "")
 
-	if _, _, got := linkIconSource(a); !samePath(got, target) {
-		t.Errorf("a link onto a link resolved to %q, want the collapsed target %q", got, target)
+	icon, _, got := linkIconSource(a)
+	t.Logf("A.lnk: icon location %q, target %q", icon, got)
+	if samePath(got, b) || samePath(icon, b) {
+		t.Errorf("a link onto a link stored the intermediate link %q; the shell was expected to collapse it", b)
+	}
+	if !samePath(got, target) && !samePath(icon, target) {
+		t.Errorf("a link onto a link reported icon %q and target %q, want one of them to be the collapsed target %q", icon, got, target)
 	}
 	if file, _ := resolveIconSource(a, ""); !samePath(file, target) {
 		t.Errorf("resolveIconSource(%q) = %q, want %q", a, file, target)
