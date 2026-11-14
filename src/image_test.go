@@ -212,6 +212,7 @@ func TestImageIconMissingFileFallsBack(t *testing.T) {
 // wrong COM vtable offset. A filled square must come back opaque.
 func TestRenderSVGSquare(t *testing.T) {
 	comSetup(t)
+	skipSVGUnlessAMD64(t)
 
 	svg := `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">` +
 		`<rect x="0" y="0" width="10" height="10" fill="#ff0000"/></svg>`
@@ -237,6 +238,7 @@ func TestRenderSVGSquare(t *testing.T) {
 // default preserveAspectRatio, not stretched.
 func TestRenderSVGLetterboxes(t *testing.T) {
 	comSetup(t)
+	skipSVGUnlessAMD64(t)
 
 	svg := `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10">` +
 		`<rect x="0" y="0" width="20" height="10" fill="#00ff00"/></svg>`
@@ -259,5 +261,14 @@ func TestRenderSVGLetterboxes(t *testing.T) {
 	}
 	if a := alphaAt(buf, size, size/2, 30); a > 50 {
 		t.Errorf("bottom band should be transparent, alpha=%d", a)
+	}
+}
+
+// skipSVGUnlessAMD64 skips the Direct2D tests where renderSVG declines by
+// design; see the comment on renderSVG.
+func skipSVGUnlessAMD64(t *testing.T) {
+	t.Helper()
+	if runtime.GOARCH != "amd64" {
+		t.Skipf("SVG icons are amd64-only, running on %s", runtime.GOARCH)
 	}
 }

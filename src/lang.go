@@ -198,6 +198,42 @@ func loadLangTag(tag, exeDir string) (s StringTable, found, badExternal bool) {
 	return s, found, true
 }
 
+// loadConfigLocalized loads a config with its own language in effect. The
+// language is resolved and installed into ui between decoding and
+// normalisation, because normalisation is what names a special that has no
+// label of its own -- doing it afterwards left those labels in whatever
+// language the previous load had, i.e. English on every fresh start.
+//
+// ui is set even when the file fails to parse (to the "auto" language), so the
+// error menu is in the user's language. exeDir is where external lang/<tag>.json
+// files are looked up; "" restricts the choice to the embedded languages.
+func loadConfigLocalized(path, exeDir string) (*Config, langResolution, error) {
+	cfg, err := decodeConfig(path)
+	if err != nil {
+		lr := resolveLanguage("auto", exeDir)
+		ui = lr.strings
+		return nil, lr, err
+	}
+	lr := resolveLanguage(cfg.Language, exeDir)
+	ui = lr.strings
+	cfg.normalize()
+	switch {
+	case lr.unresolved:
+		cfg.warn("language: %q not found, using English", cfg.Language)
+	case lr.warning != "":
+		cfg.warn("%s", lr.warning)
+	}
+	return cfg, lr, nil
+}
+
+// exeDirOrEmpty is the directory external language files resolve against.
+func exeDirOrEmpty() string {
+	if exe, err := os.Executable(); err == nil {
+		return filepath.Dir(exe)
+	}
+	return ""
+}
+
 // specialLabel returns the active language's label for a catalog entry --
 // called only where the config gave no explicit label of its own. special.go
 // carries no English text, so this always reads ui.Specials; e.id is the

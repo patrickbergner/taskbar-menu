@@ -131,6 +131,7 @@ var (
 	procPickIconDlg                 = shell32.NewProc("PickIconDlg")
 	procSHCreateItemFromParsingName = shell32.NewProc("SHCreateItemFromParsingName")
 	procSHGetLocalizedName          = shell32.NewProc("SHGetLocalizedName")
+	procSHGetKnownFolderPath        = shell32.NewProc("SHGetKnownFolderPath")
 
 	// A string resource, read out of a module mapped for its resources alone;
 	// see localizedName in shellenum.go.
@@ -1145,7 +1146,14 @@ func bitmapToIcon(color syscall.Handle) syscall.Handle {
 		uintptr(unsafe.Pointer(&bm))); r == 0 || bm.Width == 0 || bm.Height == 0 {
 		return 0
 	}
-	mask, _, _ := procCreateBitmap.Call(uintptr(bm.Width), uintptr(bm.Height), 1, 1, 0)
+	// The mask bits are passed explicitly: with a null pointer CreateBitmap
+	// leaves the contents undefined, and the mask is not "unused" for a pixel
+	// whose colour alpha is zero. A 1bpp row is padded to 16 bits.
+	stride := (int(bm.Width) + 15) / 16 * 2
+	zero := make([]byte, stride*int(bm.Height))
+	mask, _, _ := procCreateBitmap.Call(uintptr(bm.Width), uintptr(bm.Height), 1, 1,
+		uintptr(unsafe.Pointer(&zero[0])))
+	runtime.KeepAlive(zero)
 	if mask == 0 {
 		return 0
 	}
@@ -1237,6 +1245,24 @@ func assocDefaultIcon(assoc string) (string, int32, bool) {
 		return "", 0, false
 	}
 	return file, idx, true
+}
+
+// knownFolderPath returns where a known folder (Documents, Downloads, ...)
+// currently lives, or "" on failure. This follows folder redirection --
+// OneDrive's folder backup, or a Documents moved to D:\ in its Properties --
+// which a hard-coded %USERPROFILE%\Documents does not.
+func knownFolderPath(id *GUID) string {
+	var p *uint16
+	hr, _, _ := procSHGetKnownFolderPath.Call(uintptr(unsafe.Pointer(id)), 0, 0,
+		uintptr(unsafe.Pointer(&p)))
+	if p != nil {
+		// Freed even on failure, as the documentation requires.
+		defer procCoTaskMemFree.Call(uintptr(unsafe.Pointer(p)))
+	}
+	if hr != 0 || p == nil {
+		return ""
+	}
+	return utf16PtrToStringN(p, 32768)
 }
 
 // searchPath resolves a bare exe name against PATH.

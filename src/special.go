@@ -170,8 +170,10 @@ var specials = []specialEntry{
 	// --- Places -----------------------------------------------------------
 	// Shell monikers carry no extractable resource, so their icon comes from
 	// the shell image factory instead; see isShellMoniker in icons.go. That is
-	// not a workaround but the better answer: it gives the Recycle Bin its
-	// current full-or-empty icon rather than a fixed frame.
+	// not a workaround but the better answer: it gives the Recycle Bin the
+	// full-or-empty icon it had when the icon was extracted. Like every icon it
+	// is then cached, so it is only refreshed by a config reload or a cache
+	// purge, not on every show.
 	{id: "recycleBin", group: "Places",
 		target: "shell:RecycleBinFolder"},
 	{id: "thisPC", group: "Places",
@@ -198,16 +200,19 @@ var specials = []specialEntry{
 	{id: "windowsTools", group: "Folders", kind: kindDyn, roots: []string{
 		`%ProgramData%\Microsoft\Windows\Start Menu\Programs\Administrative Tools`,
 	}},
+	// The user folders are named as known folders ("known:<name>", see
+	// knownFolders in dynamic.go) rather than as %USERPROFILE%\<name>, because
+	// they are routinely somewhere else: OneDrive's folder backup moves all four.
 	{id: "desktop", group: "Folders", kind: kindDyn, roots: []string{
-		`%USERPROFILE%\Desktop`,
-		`%PUBLIC%\Desktop`,
+		"known:Desktop",
+		"known:PublicDesktop",
 	}},
 	{id: "documents", group: "Folders", kind: kindDyn,
-		roots: []string{`%USERPROFILE%\Documents`}},
+		roots: []string{"known:Documents"}},
 	{id: "downloads", group: "Folders", kind: kindDyn,
-		roots: []string{`%USERPROFILE%\Downloads`}},
+		roots: []string{"known:Downloads"}},
 	{id: "pictures", group: "Folders", kind: kindDyn,
-		roots: []string{`%USERPROFILE%\Pictures`}},
+		roots: []string{"known:Pictures"}},
 
 	// --- Shell namespace (dynamic submenus) --------------------------------
 	// Listed through IEnumShellItems rather than the filesystem, because none of

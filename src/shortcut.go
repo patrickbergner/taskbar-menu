@@ -38,7 +38,7 @@ func makeLaunchers(opts options) int {
 	coInitialize()
 
 	cfgPath := defaultConfigPath(opts.cfgPath)
-	cfg, err := LoadConfig(cfgPath)
+	cfg, _, err := loadConfigLocalized(cfgPath, exeDirOrEmpty())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR  %v\n", err)
 		return 1
@@ -82,7 +82,17 @@ func makeLaunchers(opts options) int {
 
 	fmt.Printf("%s\n\n", dir)
 	written := 0
+	// Two ids can sanitize to one file name; the second must not silently
+	// replace the shortcut the first just wrote. Keyed case-insensitively,
+	// because the file system is.
+	files := map[string]string{}
 	for _, l := range targets {
+		key := strings.ToLower(sanitizeFileName(l.Id))
+		if first, ok := files[key]; ok {
+			fmt.Fprintf(os.Stderr, "  %-24s ERROR  same file name as %q, skipped; give it a different id\n", l.Id, first)
+			continue
+		}
+		files[key] = l.Id
 		path, err := writeShortcut(exePath, configArg, l, dir)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "  %-24s ERROR  %v\n", l.Id, err)

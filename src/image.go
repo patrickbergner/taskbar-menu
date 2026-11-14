@@ -285,9 +285,13 @@ func renderRaster(path string, size int32) (buf []byte, ok bool) {
 	}
 
 	// Convert to premultiplied BGRA, the one format DrawIconEx alpha-blends
-	// correctly. The alpha-threshold argument is a double; it is the sixth
-	// parameter and therefore passed on the stack, so its zero value is simply a
-	// zero word -- no XMM register involved.
+	// correctly. The alpha-threshold argument is a double. On amd64 it is the
+	// fifth parameter after this, passed on the stack, so its zero value is
+	// simply a zero word -- no XMM register involved. On ARM64 a double goes in
+	// d0 instead and the integer arguments behind it move up one register: the
+	// callee then reads paletteTranslate from the slot passed here as the
+	// threshold. Both are zero, so the call is still correct there, and the
+	// threshold itself only matters for palette conversions, which this is not.
 	var conv unsafe.Pointer
 	if hr := comCall(factory, wicCreateFormatConverter, uintptr(unsafe.Pointer(&conv))); hr != 0 || conv == nil {
 		return nil, false
@@ -323,7 +327,19 @@ func renderRaster(path string, size int32) (buf []byte, ok bool) {
 // render target and returns the size*size*4 premultiplied-BGRA pixels. A square
 // viewport plus the SVG default preserveAspectRatio ("xMidYMid meet")
 // letterboxes a non-square document for us. ok is false on any failure.
+//
+// amd64 only. CreateSvgDocument takes a D2D1_SIZE_F by value, which packSizeF
+// turns into one integer word -- correct for the x64 convention, where an
+// 8-byte struct travels in a general-purpose register. On ARM64 a struct of
+// two floats goes in the floating-point registers s0/s1, which syscall cannot
+// load, and every integer argument after it shifts down by one: the callee
+// would take the packed floats as its output pointer and write through it. An
+// SVG icon there falls back to the generic icon instead of crashing the menu.
 func renderSVG(path string, size int32) (buf []byte, ok bool) {
+	if runtime.GOARCH != "amd64" {
+		logf("image: SVG icons are not supported on %s: %s", runtime.GOARCH, path)
+		return nil, false
+	}
 	factory := wicFactory()
 	if factory == nil {
 		logf("image: no WIC factory")

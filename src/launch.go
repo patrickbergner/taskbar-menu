@@ -4,8 +4,6 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -107,13 +105,12 @@ func launcherNode(l Launcher) *node {
 // the TASKBARMENU_LOG sink rather than a console or a dialog.
 func runLaunch(opts options) int {
 	coInitialize() // ShellExecuteEx on a shell:AppsFolder target needs COM up
-	cfg, err := LoadConfig(defaultConfigPath(opts.cfgPath))
+	// Localized for the confirmation dialog and so a launcher found by its
+	// default label matches the label the menu shows.
+	cfg, _, err := loadConfigLocalized(defaultConfigPath(opts.cfgPath), exeDirOrEmpty())
 	if err != nil {
 		logf("launch: %v", err)
 		return 1
-	}
-	if exe, err := os.Executable(); err == nil {
-		ui = resolveLanguage(cfg.Language, filepath.Dir(exe)).strings
 	}
 	l, ok := findLauncher(cfg, opts.launch)
 	if !ok {

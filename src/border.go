@@ -66,7 +66,13 @@ func cbtHookProc(nCode, wp, lp uintptr) uintptr {
 
 func borderWndProc(hwnd, msg, wp, lp uintptr) uintptr {
 	h := syscall.Handle(hwnd)
-	orig := borderOrigProcs[h]
+	orig, ok := borderOrigProcs[h]
+	if !ok || orig == 0 {
+		// The bookkeeping is already gone (uninstallBorderHook clears it while
+		// the subclass may still be attached). CallWindowProc with a null
+		// procedure is undefined, so hand the message to the default handler.
+		return defWindowProc(hwnd, msg, wp, lp)
+	}
 	r := callWindowProc(orig, h, uint32(msg), wp, lp)
 	switch uint32(msg) {
 	case wmNcPaint:

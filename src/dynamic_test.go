@@ -646,9 +646,10 @@ func TestLaunchTargetFor(t *testing.T) {
 		`SHELL:AppsFolder\Foo!App`:        `SHELL:AppsFolder\Foo!App`,
 		`C:\Windows\System32\notepad.exe`: `C:\Windows\System32\notepad.exe`,
 		`\\server\share\tool.exe`:         `\\server\share\tool.exe`,
-		// This PC yields a bare drive letter, which must not be read as an AUMID.
-		`C:`: `C:`,
-		`z:`: `z:`,
+		// This PC yields a bare drive letter, which must not be read as an AUMID,
+		// and which gets its root backslash: bare "C:" is drive-relative.
+		`C:`: `C:\`,
+		`z:`: `z:\`,
 		``:   ``,
 	}
 	for in, want := range cases {
@@ -687,7 +688,7 @@ func TestShellListingIconsAllResolve(t *testing.T) {
 	for _, root := range []string{
 		"shell:AppsFolder", "shell:ControlPanelFolder", "shell:MyComputerFolder",
 	} {
-		entries := enumShellFolder(root, maxLimit, newBudget())
+		entries, _ := enumShellFolder(root, maxLimit, newBudget())
 		if len(entries) == 0 {
 			t.Logf("%s: no listing here, skipping", root)
 			continue
@@ -714,7 +715,7 @@ func TestShellListingIconsAllResolve(t *testing.T) {
 // wrong BHID_EnumItems or IID_IEnumShellItems.
 func TestEnumShellFolderAppsFolder(t *testing.T) {
 	coInitialize()
-	got := enumShellFolder("shell:AppsFolder", 50, newBudget())
+	got, _ := enumShellFolder("shell:AppsFolder", 50, newBudget())
 	if len(got) == 0 {
 		t.Skip("AppsFolder enumeration unavailable here")
 	}
@@ -752,7 +753,7 @@ func TestShellListingsCarryNoParsingNameLabels(t *testing.T) {
 	defer purgeCaches()
 
 	for _, root := range []string{"shell:ControlPanelFolder", "shell:AppsFolder"} {
-		entries := enumShellFolder(root, maxLimit, newBudget())
+		entries, _ := enumShellFolder(root, maxLimit, newBudget())
 		if len(entries) == 0 {
 			t.Logf("%s: no listing here, skipping", root)
 			continue
@@ -767,7 +768,7 @@ func TestShellListingsCarryNoParsingNameLabels(t *testing.T) {
 
 func TestEnumShellFolderDrives(t *testing.T) {
 	coInitialize()
-	got := enumShellFolder("shell:MyComputerFolder", 100, newBudget())
+	got, _ := enumShellFolder("shell:MyComputerFolder", 100, newBudget())
 	if len(got) == 0 {
 		t.Skip("MyComputerFolder enumeration unavailable here")
 	}

@@ -85,6 +85,11 @@ type appState struct {
 	trayAdded bool
 	showing   bool
 
+	// trayHIcon is the extracted notification icon, kept so re-adding the icon
+	// (Explorer restart, "trayIcon" toggled on) does not leak a handle each time.
+	trayHIcon     syscall.Handle
+	trayHIconSize int32
+
 	taskbarCreatedMsg uint32
 }
 
@@ -341,7 +346,7 @@ func defaultConfigPath(override string) string {
 func checkConfig(path string) int {
 	fmt.Printf("%s\n\n", path)
 
-	cfg, err := LoadConfig(path)
+	cfg, _, err := loadConfigLocalized(path, exeDirOrEmpty())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR  %v\n", err)
 		return 1
@@ -514,10 +519,8 @@ func runServer(opts options, cfgPath, class string) {
 
 	a.taskbarCreatedMsg = registerWindowMessage("TaskbarCreated")
 
-	a.reload(true)
+	a.reload(true) // also adds the tray icon when the config wants one
 	logf("config loaded: err=%v items=%d warnings=%d", a.cfgErr, len(a.cfg.Items), len(a.cfg.Warnings))
-
-	a.addTrayIcon()
 	logf("tray icon added=%v", a.trayAdded)
 
 	if !opts.background {
@@ -569,6 +572,7 @@ func (a *appState) messageLoop() {
 
 func (a *appState) shutdown() {
 	a.removeTrayIcon()
+	a.freeTrayIcon()
 	destroyMenu(a.menu)
 	destroyMenu(a.trayMenu)
 	deleteObject(a.font)
@@ -798,7 +802,12 @@ func (a *appState) reload(force bool) {
 	}
 	a.cfgStamp = cfgSt
 
-	cfg, err := LoadConfig(a.cfgPath)
+	exeDir := ""
+	if a.exePath != "" {
+		exeDir = filepath.Dir(a.exePath)
+	}
+	// Sets ui as well, before the specials are named; see loadConfigLocalized.
+	cfg, lr, err := loadConfigLocalized(a.cfgPath, exeDir)
 	if err != nil {
 		a.cfgErr = err
 		a.cfg = defaultConfig()
@@ -806,25 +815,12 @@ func (a *appState) reload(force bool) {
 		a.cfgErr = nil
 		a.cfg = cfg
 	}
-
-	exeDir := ""
-	if a.exePath != "" {
-		exeDir = filepath.Dir(a.exePath)
-	}
-	lr := resolveLanguage(a.cfg.Language, exeDir)
-	ui = lr.strings
 	a.langFilePath = lr.watch
 	a.langStamp = statStamp(a.langFilePath)
-	switch {
-	case lr.unresolved:
-		a.cfg.warn("language: %q not found, using English", a.cfg.Language)
-	case lr.warning != "":
-		a.cfg.warn("%s", lr.warning)
-	}
 
 	purgeCaches()
 	a.builtDPI = 0 // force a full rebuild, measurements included
-	a.refreshTrayTip()
+	a.syncTrayIcon()
 }
 
 // reloadInteractive is the tray/error-menu "Reload" command. Unlike the silent

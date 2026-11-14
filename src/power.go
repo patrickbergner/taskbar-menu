@@ -114,7 +114,9 @@ func realPowerExec(op powerOp) error {
 		// drivers may veto; with hibernation switched off in power settings
 		// Windows silently sleeps instead, which is documented behaviour and not
 		// something this can detect up front.
-		if r, _, e := procSetSuspendState.Call(hibernate, 0, 0); r == 0 {
+		// The return type is BOOLEAN, a single byte: only the low byte of the
+		// register is defined, so the rest must not be read as part of the result.
+		if r, _, e := procSetSuspendState.Call(hibernate, 0, 0); uint8(r) == 0 {
 			return e
 		}
 		return nil

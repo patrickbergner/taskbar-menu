@@ -127,7 +127,24 @@ func defaultConfig() *Config {
 // LoadConfig reads and normalises config.json. A parse error is returned to the
 // caller, which renders it as a single clickable menu item rather than failing
 // silently -- with hot reload that makes fixing the file self-correcting.
+//
+// It does not touch the active language: a special without a label of its own
+// is named from whatever ui holds at the time. Callers that show those labels
+// go through loadConfigLocalized (lang.go), which resolves the config's own
+// language first.
 func LoadConfig(path string) (*Config, error) {
+	cfg, err := decodeConfig(path)
+	if err != nil {
+		return nil, err
+	}
+	cfg.normalize()
+	return cfg, nil
+}
+
+// decodeConfig is the parsing half of LoadConfig, without normalisation. Split
+// out because normalisation reads the active language (catalog labels), and
+// which language is active is itself decided by a key in this file.
+func decodeConfig(path string) (*Config, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -139,7 +156,6 @@ func LoadConfig(path string) (*Config, error) {
 	if err := dec.Decode(cfg); err != nil {
 		return nil, fmt.Errorf("%s: %w", jsonErrorPosition(raw, err), err)
 	}
-	cfg.normalize()
 	return cfg, nil
 }
 
@@ -312,6 +328,37 @@ func (c *Config) normLaunchers() {
 		out = append(out, l)
 	}
 	c.Launchers = out
+	c.warnLauncherCollisions()
+}
+
+// warnLauncherCollisions reports launchers whose ids differ but map to the same
+// taskbar identity or the same shortcut file. aumid() folds every character
+// outside [A-Za-z0-9] to '_', so "my app", "my-app" and "my.app" are one
+// AppUserModelID and their pinned buttons merge into one; sanitizeFileName folds
+// the characters Windows forbids in a file name, so "a:b" and "a?b" write the
+// same .lnk. The derivation itself cannot change -- that would orphan every
+// existing pin -- so the collision is made visible instead.
+func (c *Config) warnLauncherCollisions() {
+	byAUMID := map[string]string{}
+	byFile := map[string]string{}
+	for i, l := range c.Launchers {
+		where := fmt.Sprintf("launchers[%d] (%q)", i, l.Id)
+		if first, ok := byAUMID[aumid(l.Id)]; ok {
+			if first == l.Id {
+				c.warn("%s: duplicate id; --launch only ever finds the first", where)
+			} else {
+				c.warn("%s: same taskbar identity as %q (ids differ only in punctuation), pinned buttons would merge", where, first)
+			}
+		} else {
+			byAUMID[aumid(l.Id)] = l.Id
+		}
+		file := strings.ToLower(sanitizeFileName(l.Id))
+		if first, ok := byFile[file]; ok && first != l.Id {
+			c.warn("%s: same shortcut file name as %q, --make-launchers would overwrite it", where, first)
+		} else if !ok {
+			byFile[file] = l.Id
+		}
+	}
 }
 
 // findLauncher resolves the key --launch / --make-launcher was given: id first,

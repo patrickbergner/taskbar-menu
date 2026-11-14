@@ -61,10 +61,10 @@ const (
 
 // walkBudget bounds a single population, whatever it costs per entry.
 //
-// nodes stops a pathological tree; deadline stops a slow one. The deadline is
-// the one that matters in practice: a folder entry pointing at a disconnected
-// UNC path would otherwise block the menu's modal loop until the SMB client
-// gives up, with the menu frozen on screen the whole time.
+// nodes stops a pathological tree; deadline stops a slow one. The deadline only
+// takes effect between entries, so it bounds a shell enumeration (one COM call
+// per item) but cannot interrupt a single blocking directory read; that case --
+// a folder entry on a disconnected UNC path -- is covered by readDirTimeout.
 type walkBudget struct {
 	nodes    int
 	deadline time.Time
@@ -108,7 +108,7 @@ func dynSourceFor(it Item) *dynSource {
 	}
 	roots := make([]string, 0, len(e.roots))
 	for _, r := range e.roots {
-		if r = expandEnv(r); r != "" {
+		if r = resolveRoot(r); r != "" {
 			roots = append(roots, r)
 		}
 	}
@@ -127,6 +127,53 @@ func dynSourceFor(it Item) *dynSource {
 		d.openLabel = it.Label
 	}
 	return d
+}
+
+// knownFolderPrefix marks a catalog root that names a Windows known folder
+// rather than a path; see resolveRoot.
+const knownFolderPrefix = "known:"
+
+// knownFolder pairs a known folder's id with the path it has when nothing has
+// redirected it -- used only if the API itself fails.
+type knownFolder struct {
+	id       GUID
+	fallback string
+}
+
+// knownFolders are the FOLDERID_* values the catalog refers to.
+var knownFolders = map[string]knownFolder{
+	// FOLDERID_Desktop {B4BFCC3A-DB2C-424C-B029-7FE99A87C641}
+	"Desktop": {GUID{0xB4BFCC3A, 0xDB2C, 0x424C, [8]byte{0xB0, 0x29, 0x7F, 0xE9, 0x9A, 0x87, 0xC6, 0x41}},
+		`%USERPROFILE%\Desktop`},
+	// FOLDERID_PublicDesktop {C4AA340D-F20F-4863-AFEF-F87EF2E6BA25}
+	"PublicDesktop": {GUID{0xC4AA340D, 0xF20F, 0x4863, [8]byte{0xAF, 0xEF, 0xF8, 0x7E, 0xF2, 0xE6, 0xBA, 0x25}},
+		`%PUBLIC%\Desktop`},
+	// FOLDERID_Documents {FDD39AD0-238F-46AF-ADB4-6C85480369C7}
+	"Documents": {GUID{0xFDD39AD0, 0x238F, 0x46AF, [8]byte{0xAD, 0xB4, 0x6C, 0x85, 0x48, 0x03, 0x69, 0xC7}},
+		`%USERPROFILE%\Documents`},
+	// FOLDERID_Downloads {374DE290-123F-4565-9164-39C4925E467B}
+	"Downloads": {GUID{0x374DE290, 0x123F, 0x4565, [8]byte{0x91, 0x64, 0x39, 0xC4, 0x92, 0x5E, 0x46, 0x7B}},
+		`%USERPROFILE%\Downloads`},
+	// FOLDERID_Pictures {33E28130-4E1E-4676-835A-98395C3BC3BB}
+	"Pictures": {GUID{0x33E28130, 0x4E1E, 0x4676, [8]byte{0x83, 0x5A, 0x98, 0x39, 0x5C, 0x3B, 0xC3, 0xBB}},
+		`%USERPROFILE%\Pictures`},
+}
+
+// resolveRoot turns one catalog root into a path: "known:<name>" through
+// SHGetKnownFolderPath, anything else through %VAR% expansion.
+func resolveRoot(r string) string {
+	name, ok := strings.CutPrefix(r, knownFolderPrefix)
+	if !ok {
+		return expandEnv(r)
+	}
+	kf, ok := knownFolders[name]
+	if !ok {
+		return ""
+	}
+	if p := knownFolderPath(&kf.id); p != "" {
+		return p
+	}
+	return expandEnv(kf.fallback)
 }
 
 // dynSummary describes where a dynamic submenu's contents will come from, for
@@ -195,7 +242,7 @@ func (a *appState) expandShell(d *dynSource, b *walkBudget) []*node {
 	if len(d.roots) == 0 {
 		return nil
 	}
-	entries := shellListing(d.roots[0], b)
+	entries, complete := shellListing(d.roots[0], b)
 
 	kept := make([]shellEntry, 0, len(entries))
 	for _, e := range entries {
@@ -208,7 +255,9 @@ func (a *appState) expandShell(d *dynSource, b *walkBudget) []*node {
 		return strings.ToLower(kept[i].display) < strings.ToLower(kept[j].display)
 	})
 
-	truncated := false
+	// A listing the deadline cut short is as incomplete as one the limit cut,
+	// and gets the same way out to the full folder.
+	truncated := !complete
 	if len(kept) > d.limit {
 		kept = kept[:d.limit]
 		truncated = true
@@ -260,11 +309,17 @@ func (a *appState) expandFolder(roots []string, depth, limit int, sortMode strin
 	}
 
 	lists := make([][]dirEntry, 0, len(roots))
+	timedOut := false
 	for _, root := range roots {
 		// A missing root is normal rather than exceptional: the per-user Start
 		// Menu tree does not exist on a fresh profile, and %PUBLIC%\Desktop may
 		// be absent. Only every root failing produces an empty menu.
-		ents, err := os.ReadDir(root)
+		ents, err := readDirWithin(root, readDirTimeout)
+		if err == errReadDirTimeout {
+			timedOut = true
+			logf("folder %s: listing took longer than %v, skipped", root, readDirTimeout)
+			continue
+		}
 		if err != nil {
 			continue
 		}
@@ -294,10 +349,49 @@ func (a *appState) expandFolder(roots []string, depth, limit int, sortMode strin
 		out = append(out, a.leafNode(e.label, e.path))
 	}
 
-	if truncated || b.spent() {
+	// Only when something is actually missing. A level is listed in one go and
+	// the levels below are populated lazily with budgets of their own, so a
+	// budget that ran out while this level was listed cut nothing off; a root
+	// that timed out did. Either way the overflow entry opens the folder in
+	// Explorer, which waits as long as the share needs.
+	if truncated || timedOut {
 		out = append(out, a.moreNode(roots))
 	}
 	return out
+}
+
+// readDirTimeout bounds one directory listing. os.ReadDir cannot be cancelled,
+// and on a disconnected UNC path it blocks until the SMB client gives up --
+// tens of seconds with the menu frozen on screen, since this runs inside
+// WM_INITMENUPOPUP. Generous on purpose: a local disk spinning up must still
+// make it.
+const readDirTimeout = 2 * time.Second
+
+var errReadDirTimeout = fmt.Errorf("directory listing timed out")
+
+// readDirWithin is os.ReadDir with a timeout. The listing runs on its own
+// goroutine, which is safe because it is plain file I/O with no Win32 UI or COM
+// involved; everything done with the result stays on the UI thread. On a
+// timeout the goroutine is abandoned and finishes on its own -- the channel is
+// buffered so it never blocks.
+func readDirWithin(root string, timeout time.Duration) ([]os.DirEntry, error) {
+	type result struct {
+		ents []os.DirEntry
+		err  error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		ents, err := os.ReadDir(root)
+		ch <- result{ents, err}
+	}()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case r := <-ch:
+		return r.ents, r.err
+	case <-timer.C:
+		return nil, errReadDirTimeout
+	}
 }
 
 // leafNode is one enumerated entry. iconFile holds the raw path, not a resolved
@@ -360,16 +454,20 @@ const shellListingTTL = 5 * time.Minute
 // limit: the cache is shared by every entry naming the same folder, so it must
 // hold the fullest listing any of them could ask for. Trimming happens per entry
 // in expandShell.
-func shellListing(parsingName string, b *walkBudget) []shellEntry {
+//
+// complete is false when the walk budget cut the enumeration short. Such a
+// listing is shown but not cached: caching it would hide the missing entries
+// for the whole TTL, with nothing on screen saying anything was missing.
+func shellListing(parsingName string, b *walkBudget) (entries []shellEntry, complete bool) {
 	if c, ok := shellListings[parsingName]; ok && time.Since(c.at) < shellListingTTL {
-		return c.entries
+		return c.entries, true
 	}
-	entries := enumShellFolder(parsingName, maxLimit, b)
-	if len(entries) == 0 {
-		return nil // do not cache a failure; the next open should retry
+	entries, complete = enumShellFolder(parsingName, maxLimit, b)
+	if len(entries) == 0 || !complete {
+		return entries, complete // do not cache a failure or a partial list; the next open retries
 	}
 	shellListings[parsingName] = shellListingEntry{entries: entries, at: time.Now()}
-	return entries
+	return entries, true
 }
 
 // purgeShellListings drops the cache on config reload, so "Reload config" is
@@ -491,11 +589,16 @@ func displayName(name string, isDir bool) string {
 // user can actually edit.
 //
 // Comparison is case-insensitive because Windows paths are.
+//
+// File de-duplication is strictly across roots. Two files of one folder can
+// share a display name -- "Foo.lnk" and "Foo.url" both read "Foo" -- and those
+// are two different things, so both stay.
 func mergeLevels(lists [][]dirEntry) []dirEntry {
 	var out []dirEntry
-	index := map[string]int{}
+	type seen struct{ at, list int }
+	index := map[string]seen{}
 
-	for _, list := range lists {
+	for li, list := range lists {
 		for _, e := range list {
 			key := strings.ToLower(e.label) + "\x00"
 			if e.dir {
@@ -503,14 +606,19 @@ func mergeLevels(lists [][]dirEntry) []dirEntry {
 			} else {
 				key += "f"
 			}
-			if at, ok := index[key]; ok {
+			if s, ok := index[key]; ok {
 				if e.dir {
-					out[at].roots = append(out[at].roots, e.roots...)
+					out[s.at].roots = append(out[s.at].roots, e.roots...)
+					continue
 				}
-				// A duplicate file keeps the first one seen.
-				continue
+				if s.list != li {
+					continue // a duplicate from a later root: the first one seen wins
+				}
+				// Same folder, same display name: a different file. Kept, and
+				// the index still points at the first for later roots to match.
+			} else {
+				index[key] = seen{at: len(out), list: li}
 			}
-			index[key] = len(out)
 			out = append(out, e)
 		}
 	}

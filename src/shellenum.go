@@ -58,10 +58,14 @@ type shellEntry struct {
 //
 // The caller's thread must have CoInitialize'd; the server does at startup and
 // the --launch shim does before it launches anything.
-func enumShellFolder(parsingName string, limit int, b *walkBudget) []shellEntry {
+//
+// complete is false when the budget ran out before the enumeration ended, i.e.
+// the listing is missing entries. Reaching limit counts as complete: that cap
+// is by design, not by accident of timing.
+func enumShellFolder(parsingName string, limit int, b *walkBudget) (entries []shellEntry, complete bool) {
 	name := utf16Ptr(parsingName)
 	if name == nil {
-		return nil
+		return nil, true
 	}
 	var folder unsafe.Pointer
 	hr, _, _ := procSHCreateItemFromParsingName.Call(
@@ -70,7 +74,7 @@ func enumShellFolder(parsingName string, limit int, b *walkBudget) []shellEntry 
 		uintptr(unsafe.Pointer(&folder)))
 	runtime.KeepAlive(name)
 	if hr != 0 || folder == nil {
-		return nil
+		return nil, true
 	}
 	defer release(folder)
 
@@ -79,12 +83,15 @@ func enumShellFolder(parsingName string, limit int, b *walkBudget) []shellEntry 
 		uintptr(unsafe.Pointer(&bhidEnumItems)),
 		uintptr(unsafe.Pointer(&iidEnumShellItems)),
 		uintptr(unsafe.Pointer(&enum))); hr != 0 || enum == nil {
-		return nil
+		return nil, true
 	}
 	defer release(enum)
 
 	out := make([]shellEntry, 0, 64)
-	for len(out) < limit && !b.spent() {
+	for len(out) < limit {
+		if b.spent() {
+			return out, false
+		}
 		var item unsafe.Pointer
 		var fetched uint32
 		hr := comCall(enum, enumShellItemsNext, 1,
@@ -103,7 +110,7 @@ func enumShellFolder(parsingName string, limit int, b *walkBudget) []shellEntry 
 		}
 		out = append(out, e)
 	}
-	return out
+	return out, true
 }
 
 // isUnnamedShellItem reports whether an entry has no name of its own, which the
@@ -164,6 +171,10 @@ func shellDisplayName(item unsafe.Pointer, form uintptr) string {
 func launchTargetFor(parsing string) string {
 	l := strings.ToLower(parsing)
 	switch {
+	case len(parsing) == 2 && isFilesystemPath(parsing):
+		// A bare "C:" is drive-relative -- "the current directory on C" -- to
+		// most of the path handling it would pass through. The root is meant.
+		return parsing + `\`
 	case parsing == "" || isFilesystemPath(parsing):
 		return parsing
 	case strings.HasPrefix(l, "shell:"):

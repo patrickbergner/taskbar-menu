@@ -23,8 +23,30 @@ func (a *appState) notifyData(flags uint32) NOTIFYICONDATAW {
 	return nid
 }
 
+func (a *appState) wantsTrayIcon() bool {
+	return a.cfg != nil && a.cfg.TrayIcon != nil && *a.cfg.TrayIcon
+}
+
+// syncTrayIcon makes the notification icon match the config after a reload:
+// added when "trayIcon" was switched on, removed when it was switched off, and
+// otherwise just given the current tooltip. Without the first two, editing the
+// key needed a restart of the resident server to take effect.
+func (a *appState) syncTrayIcon() {
+	if a.hwnd == 0 {
+		return // no window to own an icon yet (or a test's bare appState)
+	}
+	switch want := a.wantsTrayIcon(); {
+	case want && !a.trayAdded:
+		a.addTrayIcon()
+	case !want && a.trayAdded:
+		a.removeTrayIcon()
+	default:
+		a.refreshTrayTip()
+	}
+}
+
 func (a *appState) addTrayIcon() {
-	if a.cfg.TrayIcon == nil || !*a.cfg.TrayIcon {
+	if a.trayAdded || !a.wantsTrayIcon() {
 		return
 	}
 	nid := a.notifyData(nifMessage | nifIcon | nifTip)
@@ -69,15 +91,32 @@ func (a *appState) tipText() string {
 
 // trayIcon uses the exe's own embedded icon so the notification area matches
 // whatever icon was stamped in by the build.
+//
+// The handle is kept and reused: the icon is re-added after every Explorer
+// restart and every time "trayIcon" is switched back on, and extracting a fresh
+// one each time leaked the previous handle. It is only replaced when the
+// primary monitor's DPI asks for a different size.
 func (a *appState) trayIcon() syscall.Handle {
 	size := getSystemMetricsForDpi(smCXSmIcon, a.primaryDPI())
 	if size <= 0 {
 		size = 16
 	}
+	if a.trayHIcon != 0 && a.trayHIconSize == size {
+		return a.trayHIcon
+	}
+	a.freeTrayIcon()
 	if h := extractIcon(a.exePath, 0, size); h != 0 {
+		a.trayHIcon, a.trayHIconSize = h, size
 		return h
 	}
 	return genericIcon()
+}
+
+// freeTrayIcon destroys the kept tray icon. The shared generic icon is never
+// stored there, so nothing system-owned is destroyed.
+func (a *appState) freeTrayIcon() {
+	destroyIcon(a.trayHIcon)
+	a.trayHIcon, a.trayHIconSize = 0, 0
 }
 
 // notify surfaces a message as a balloon, falling back to a message box when

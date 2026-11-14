@@ -46,8 +46,9 @@ func isAppsFolder(s string) bool {
 // than a file: a "shell:" moniker or a "::{CLSID}" path. Neither holds an icon
 // resource to extract, and both are exactly what SHCreateItemFromParsingName
 // takes -- so the image factory is the only route to their icon, and also the
-// better one, because it yields the Recycle Bin's *current* full-or-empty icon
-// rather than a frame frozen at config-load time.
+// better one, because it yields the Recycle Bin's actual full-or-empty state
+// rather than one fixed frame (as of the extraction -- the icon is cached like
+// any other until the next reload or purge).
 //
 // isAppsFolder stays separate: "is this a Store app" is a different question,
 // asked by launch.go and shortcut.go for different reasons.
@@ -200,12 +201,23 @@ func resolveIconSourceUncached(exec, iconSpec string) (string, int32) {
 		return shellFile, shellIdx
 	}
 
+	// The extension decides the type association, but only for a file: a folder
+	// called "node.js" is a folder, and a file called "LICENSE" is not one. The
+	// stat is only paid here, after the shell gave no usable answer, and the
+	// result is memoized with the rest. A path that cannot be stat'ed falls back
+	// to guessing from the name, as before.
 	assoc := strings.ToLower(filepath.Ext(exec))
-	if assoc == "" {
-		assoc = "Folder" // no extension: most likely a directory
+	if fi, err := os.Stat(exec); err == nil {
+		if fi.IsDir() {
+			assoc = "Folder"
+		}
+	} else if assoc == "" {
+		assoc = "Folder" // missing and no extension: most likely a directory
 	}
-	if file, idx, ok := assocDefaultIcon(assoc); ok {
-		return file, idx
+	if assoc != "" {
+		if file, idx, ok := assocDefaultIcon(assoc); ok {
+			return file, idx
+		}
 	}
 
 	if shellOK {
